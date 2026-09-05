@@ -1,0 +1,20 @@
+release_date,version_name,details
+31/08/2026,v0.4.0,"refactor: Sincronización total con el Plan Maestro de la App Android.
+refactor: Estandarización de documentación en headers y unificación de logs técnicos en español.
+feat: Preparación de endpoints para la versión estable v1.0.0."
+23/08/2026,v0.3.6,"feat: Implementación de reports.service.js con integración directa a GitHub API y uso de supabaseAdmin (bypass RLS).
+feat: Nuevo endpoint POST /api/reports para recepción de errores con diagnóstico detallado.
+refactor: Actualización de controladores de autenticación y versiones para mayor seguridad y compatibilidad."
+18/08/2026,v0.3.0,"feat: Soporte para Refresh Token de Supabase para sesiones persistentes.
+feat: Nuevo endpoint POST /auth/refresh para renovación de tokens.
+refactor: Actualización de servicios de Auth para retornar refreshToken."
+14/08/2026,v0.2.5,"feat: Sistema de autodiagnóstico (DNS, Supabase Connection, Tables Integrity).
+feat: Cron de supervivencia (Keep-Alive) cada 6 horas para evitar suspensión de BD.
+fix: Prioridad DNS IPv4 y servidores redundantes (8.8.8.8, 1.1.1.1).
+feat: Logs enriquecidos con timestamps e ISO level."
+05/07/2026,v0.2.1,"feat: Migración masiva a UUID en toda la arquitectura de datos.
+feat: Paginación avanzada con parámetros start/count en News y Posts.
+feat: Implementación de Row Level Security (RLS) en Supabase."
+05/06/2026,v0.1.0,"feat: Arquitectura inicial del servidor Node.js (Express 5).
+feat: Integración de Supabase JS SDK v2 y configuración de middlewares de seguridad (Helmet, CORS).
+feat: Endpoints base para la migración desde Google Apps Script."
