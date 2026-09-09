@@ -62,6 +62,35 @@ export async function getSchools(municipalityId) {
 }
 
 /**
+ * Obtiene los grupos asociados a una escuela.
+ */
+export async function getGroups(schoolId) {
+  log(`Consultando grupos para la escuela: ${schoolId}`);
+  const { data, error } = await supabase
+    .from('school_groups')
+    .select('*')
+    .eq('school_id', schoolId)
+    .order('name', { ascending: true });
+
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Obtiene el listado de responsabilidades disponibles para docentes.
+ */
+export async function getResponsibilities() {
+  log('Consultando catálogo de responsabilidades');
+  const { data, error } = await supabase
+    .from('responsibilities')
+    .select('*')
+    .order('name', { ascending: true });
+
+  if (error) throw error;
+  return data;
+}
+
+/**
  * Recupera la información de una escuela específica por su ID.
  */
 export async function getSchoolById(schoolId) {

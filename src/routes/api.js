@@ -218,6 +218,18 @@ router.get('/auth/user/:username', async (req, res) => {
   }
 });
 
+/**
+ * Verifica si un usuario existe (Sin devolver datos privados).
+ */
+router.get('/auth/exists/:username', async (req, res) => {
+  try {
+    const result = await authService.checkUsernameExists(req.params.username);
+    res.json({ success: true, ...result });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // ============================================================================
 // 4. RUTAS DE PUBLICACIONES (POSTS)
 // ============================================================================
@@ -488,6 +500,15 @@ router.get('/schools/institutions', async (req, res) => {
   const { municipalityId } = req.query;
   try {
     const data = await schoolService.getSchools(municipalityId);
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.get('/schools/responsibilities', async (req, res) => {
+  try {
+    const data = await schoolService.getResponsibilities();
     res.json({ success: true, data });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });

@@ -56,22 +56,19 @@ export async function getSchedule(group, schoolId) {
 }
 
 /**
- * Recupera los grupos únicos de una escuela específica.
+ * Recupera los grupos oficiales de una escuela específica (Desde tabla school_groups).
  */
 export async function getGroupsBySchool(schoolId) {
   if (!schoolId) throw new Error('ID de escuela obligatorio');
 
   const { data, error } = await supabase
-    .from('schedules')
-    .select('group')
+    .from('school_groups')
+    .select('id, name')
     .eq('school_id', schoolId)
-    .order('group');
+    .order('name');
 
   if (error) throw new Error(`Error al listar grupos: ${error.message}`);
-
-  const groupsSet = new Set();
-  data.forEach(row => { if (row.group) groupsSet.add(row.group.trim()); });
-  return Array.from(groupsSet).sort();
+  return data;
 }
 
 /**

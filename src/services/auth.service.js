@@ -76,7 +76,8 @@ export async function signUp(username, password, userData) {
     status: 'verified',
     avatar_url: '',
     school_id: userData.schoolId || null,
-    group: userData.group || '',
+    group_id: userData.groupId || null,
+    group: userData.groupName || '', // Para compatibilidad visual rápida
     tutee: userData.tutee || '',
     responsibilities: userData.responsibilities || ''
   };
@@ -114,7 +115,7 @@ export async function login(username, password) {
   // Primero verificamos que el perfil exista y no esté bloqueado.
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
-    .select('*')
+    .select('*, schools(name)')
     .ilike('username', username)
     .maybeSingle();
 
@@ -123,6 +124,12 @@ export async function login(username, password) {
     throw new Error('Error de base de datos');
   }
   if (!profile) throw new Error('Usuario no encontrado');
+
+  // Mapeo para compatibilidad con el frontend (nombre de la escuela).
+  if (profile.schools) {
+    profile.school = profile.schools.name;
+    delete profile.schools;
+  }
 
   // Bloqueo de acceso para usuarios baneados.
   if (profile.status === 'banned') {
@@ -156,13 +163,19 @@ export async function getUserByUsername(username) {
 
   const { data, error } = await supabase
     .from('profiles')
-    .select('username, first_name, last_name, full_name, avatar_url, role, school, "group", status')
+    .select('username, first_name, last_name, full_name, avatar_url, role, "group", status, schools(name)')
     .ilike('username', username)
     .maybeSingle();
 
   if (error || !data) {
     logError(`❌ Usuario no encontrado: ${username}`, error || new Error('No existe el perfil'));
     throw new Error('Usuario no encontrado');
+  }
+
+  // Mapeo para el frontend.
+  if (data.schools) {
+    data.school = data.schools.name;
+    delete data.schools;
   }
   return data;
 }
@@ -186,7 +199,7 @@ export async function updateUser(userId, updateData) {
   if (fetchError) throw new Error('Perfil no encontrado');
 
   // Campos permitidos para actualización directa.
-  const allowedFields = ['first_name', 'last_name', 'full_name', 'id_card', 'role', 'school', 'group', 'tutee', 'responsibilities', 'avatar_url', 'status'];
+  const allowedFields = ['first_name', 'last_name', 'full_name', 'id_card', 'role', 'school_id', 'group', 'tutee', 'responsibilities', 'avatar_url', 'status'];
   const updated = { ...existing };
   allowedFields.forEach(f => { if (updateData[f] !== undefined) updated[f] = updateData[f]; });
 
@@ -265,6 +278,24 @@ export async function verifyPassword(username, password) {
   }
   log(`✅ Contraseña verificada para ${username}`, 'INFO');
   return { valid: true };
+}
+
+/**
+ * Verifica si un nombre de usuario existe en la plataforma (Útil para Tutores).
+ */
+export async function checkUsernameExists(username) {
+  log(`🔍 Verificando existencia de usuario: ${username}`);
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('username')
+    .ilike('username', username)
+    .maybeSingle();
+
+  if (error) {
+    logError(`❌ Error al verificar usuario: ${username}`, error);
+    throw new Error('Error al verificar usuario');
+  }
+  return { exists: !!data };
 }
 
 // ==================== ELIMINACIÓN DE CUENTA ====================
