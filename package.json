@@ -1,6 +1,6 @@
 ﻿{
   "name": "PreuSync-backend",
-  "version": "0.4.0",
+  "version": "0.4.8",
   "description": "",
   "main": "server.js",
   "type": "module",
