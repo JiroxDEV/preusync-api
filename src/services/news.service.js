@@ -7,7 +7,6 @@
  *              edición, recuperación por rangos y subida de imágenes.
  * Autor: JiroxDEV
  * Licensed under the GNU Affero General Public License v3
- * Licensed under the GNU Affero General Public License v3
  * ============================================================================
  */
 

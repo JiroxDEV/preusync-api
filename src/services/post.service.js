@@ -7,7 +7,6 @@
  *              edición, borrado, reportes y estadísticas del usuario.
  * Autor: JiroxDEV
  * Licensed under the GNU Affero General Public License v3
- * Licensed under the GNU Affero General Public License v3
  * ============================================================================
  */
 

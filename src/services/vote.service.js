@@ -7,7 +7,6 @@
  *              Utiliza funciones RPC de Postgres para asegurar atomicidad.
  * Autor: JiroxDEV
  * Licensed under the GNU Affero General Public License v3
- * Licensed under the GNU Affero General Public License v3
  * ============================================================================
  */
 

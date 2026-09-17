@@ -7,7 +7,6 @@
  *              JWT de Supabase y gestiona el acceso a rutas protegidas.
  * Autor: JiroxDEV
  * Licensed under the GNU Affero General Public License v3
- * Licensed under the GNU Affero General Public License v3
  * ============================================================================
  */
 

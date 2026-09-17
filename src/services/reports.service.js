@@ -8,7 +8,6 @@
  *              de Issues en GitHub mediante su API REST.
  * Autor: JiroxDEV
  * Licensed under the GNU Affero General Public License v3
- * Licensed under the GNU Affero General Public License v3
  * ============================================================================
  */
 
