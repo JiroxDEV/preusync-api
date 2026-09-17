@@ -10,7 +10,7 @@
  * ============================================================================
  */
 
-import { supabase, supabaseAdmin } from '../config/supabase.js';
+import { supabase } from '../config/supabase.js';
 
 const log = (message, level = 'INFO') => {
   const timestamp = new Date().toISOString();
@@ -19,22 +19,17 @@ const log = (message, level = 'INFO') => {
 
 /**
  * Obtiene el listado completo de provincias disponibles.
- * DEPURACIÓN: Usando cliente Admin para verificar existencia de datos.
  */
 export async function getProvinces() {
-  log('Consultando todas las provincias (BYPASS RLS)');
+  log('Consultando provincias disponibles');
 
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await supabase
     .from('provinces')
     .select('*')
+    .eq('is_available', true)
     .order('name', { ascending: true });
 
-  if (error) {
-    console.error('❌ Error en getProvinces (Admin):', error);
-    throw error;
-  }
-
-  log(`Depuración Admin: Se encontraron ${data ? data.length : 0} provincias.`);
+  if (error) throw error;
   return data || [];
 }
 

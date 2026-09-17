@@ -36,23 +36,6 @@ const logError = (message, error, metadata = {}) => {
 
 router.get('/ping', (req, res) => res.json({ message: 'pong' }));
 
-// --- DEPURACIÓN ---
-router.get('/debug/db', async (req, res) => {
-  try {
-    const { data: prov, error: provErr } = await supabaseAdmin.from('provinces').select('id, name, is_available');
-    const { data: mun, error: munErr } = await supabaseAdmin.from('municipalities').select('id, name');
-
-    res.json({
-      success: true,
-      project: process.env.SUPABASE_URL,
-      provinces: { count: prov ? prov.length : 0, data: prov, error: provErr },
-      municipalities: { count: mun ? mun.length : 0, error: munErr }
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
 // --- VERSIONES ---
 router.get('/version/latest', optionalAuthenticate, async (req, res) => {
   try {
