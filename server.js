@@ -7,8 +7,6 @@
  *              middlewares, rutas, diagnósticos de inicio y tareas programadas.
  * Autor: JiroxDEV
  * Licensed under the GNU Affero General Public License v3
- * Licensed under the GNU Affero General Public License v3
- * Licensed under the GNU Affero General Public License v3
  * ============================================================================
  */
 
@@ -175,5 +173,3 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (reason, promise) => {
   log(`Rechazo no manejado en: ${promise} Razón: ${reason}`, 'ERROR');
 });
-
-

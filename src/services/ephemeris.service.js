@@ -7,7 +7,6 @@
  *              Permite el registro y consulta por fechas específicas (DD/MM).
  * Autor: JiroxDEV
  * Licensed under the GNU Affero General Public License v3
- * Licensed under the GNU Affero General Public License v3
  * ============================================================================
  */
 

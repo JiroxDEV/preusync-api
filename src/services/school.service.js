@@ -2,9 +2,9 @@
  * ============================================================================
  * Proyecto: PreuSync API
  * Archivo: school.service.js
- * Versión: v2.0.0
+ * Versión: v2.1.0
  * Descripción: Servicio de gestión de instituciones y ubicaciones geográficas.
- *              Soporta la jerarquía nacional: Provincias > Municipios > Escuelas.
+ *              Soporta filtrado por disponibilidad (is_available).
  * Autor: JiroxDEV
  * Licensed under the GNU Affero General Public License v3
  * ============================================================================
@@ -18,13 +18,14 @@ const log = (message, level = 'INFO') => {
 };
 
 /**
- * Obtiene el listado completo de provincias.
+ * Obtiene el listado completo de provincias disponibles.
  */
 export async function getProvinces() {
   log('Consultando todas las provincias');
   const { data, error } = await supabase
     .from('provinces')
     .select('*')
+    .eq('is_available', true)
     .order('name', { ascending: true });
 
   if (error) throw error;
@@ -32,7 +33,7 @@ export async function getProvinces() {
 }
 
 /**
- * Obtiene los municipios asociados a una provincia.
+ * Obtiene los municipios disponibles asociados a una provincia.
  */
 export async function getMunicipalities(provinceId) {
   log(`Consultando municipios para la provincia: ${provinceId}`);
@@ -40,6 +41,7 @@ export async function getMunicipalities(provinceId) {
     .from('municipalities')
     .select('*')
     .eq('province_id', provinceId)
+    .eq('is_available', true)
     .order('name', { ascending: true });
 
   if (error) throw error;
@@ -47,7 +49,7 @@ export async function getMunicipalities(provinceId) {
 }
 
 /**
- * Obtiene las instituciones educativas asociadas a un municipio.
+ * Obtiene las instituciones educativas disponibles asociadas a un municipio.
  */
 export async function getSchools(municipalityId) {
   log(`Consultando escuelas para el municipio: ${municipalityId}`);
@@ -55,6 +57,7 @@ export async function getSchools(municipalityId) {
     .from('schools')
     .select('*')
     .eq('municipality_id', municipalityId)
+    .eq('is_available', true)
     .order('name', { ascending: true });
 
   if (error) throw error;
@@ -62,7 +65,7 @@ export async function getSchools(municipalityId) {
 }
 
 /**
- * Obtiene los grupos asociados a una escuela.
+ * Obtiene los grupos disponibles asociados a una escuela.
  */
 export async function getGroups(schoolId) {
   log(`Consultando grupos para la escuela: ${schoolId}`);
@@ -70,6 +73,7 @@ export async function getGroups(schoolId) {
     .from('school_groups')
     .select('*')
     .eq('school_id', schoolId)
+    .eq('is_available', true)
     .order('name', { ascending: true });
 
   if (error) throw error;

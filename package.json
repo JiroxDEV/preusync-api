@@ -1,5 +1,5 @@
 ﻿{
-  "name": "PreuSync-backend",
+  "name": "PreuSync-API",
   "version": "0.4.8",
   "description": "",
   "main": "server.js",
