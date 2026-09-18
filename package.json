@@ -1,6 +1,6 @@
 ﻿{
   "name": "PreuSync-API",
-  "version": "0.4.8",
+  "version": "0.4.11",
   "description": "",
   "main": "server.js",
   "type": "module",
