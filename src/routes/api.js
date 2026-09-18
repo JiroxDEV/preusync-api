@@ -127,9 +127,20 @@ router.get('/schedule', async (req, res) => {
   catch (error) { res.status(400).json({ success: false, error: error.message }); }
 });
 
+/**
+ * Obtiene la lista de todos los grupos registrados en una escuela.
+ */
 router.get('/groups', async (req, res) => {
-  try { const data = await scheduleService.getGroupsBySchool(req.query.schoolId); res.json({ success: true, data }); }
-  catch (error) { res.status(500).json({ success: false, error: error.message }); }
+  const { schoolId } = req.query;
+  try {
+    if (!schoolId) {
+      return res.status(400).json({ success: false, error: 'ID de escuela obligatorio' });
+    }
+    const data = await schoolService.getGroups(schoolId);
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 // --- NACIONAL ---
