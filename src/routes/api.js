@@ -47,10 +47,14 @@ router.get('/version/latest', optionalAuthenticate, async (req, res) => {
 
 // --- AUTH ---
 router.post('/auth/signup', async (req, res) => {
+  log(`📝 Petición de registro recibida: ${req.body.username}`, 'INFO', { body: req.body });
   try {
     const result = await authService.signUp(req.body.username, req.body.password, req.body);
     res.status(201).json({ success: true, data: result });
-  } catch (error) { res.status(400).json({ success: false, error: error.message }); }
+  } catch (error) {
+    logError(`❌ Fallo en el registro: ${req.body.username}`, error);
+    res.status(400).json({ success: false, error: error.message });
+  }
 });
 
 router.post('/auth/login', async (req, res) => {

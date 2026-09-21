@@ -73,13 +73,15 @@ export async function signUp(username, password, userData) {
     id_card: userData.idCard || '',
     role: userData.role || 'student',
     status: 'verified',
-    avatar_url: '',
+    avatar_url: userData.avatar || '',
     school_id: userData.schoolId || null,
     group_id: userData.groupId || null,
     group: userData.groupName || '', // Para compatibilidad visual rápida
     tutee: userData.tutee || '',
     responsibilities: userData.responsibilities || ''
   };
+
+  log(`💾 Intentando insertar perfil para ${username}`, 'INFO', { profile });
 
   // Inserción del perfil mediante cliente Admin para ignorar políticas de RLS restrictivas.
   const { error: insertError } = await supabaseAdmin.from('profiles').insert(profile);
