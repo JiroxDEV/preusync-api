@@ -1,6 +1,14 @@
 release_date,version_name,details
-02/09/2026,v0.4.12,"fix: Corrección de inserción de perfil en Supabase eliminando columna inexistente 'group' de las inserciones en signUp.
+24/09/2026,v0.4.12,"fix: Corrección de inserción de perfil en Supabase eliminando columna inexistente 'group' de las inserciones en signUp.
 refactor: Alineación estricta de nombres de columnas (group_id, school_id) en consultas y actualizaciones de perfiles."
+20/09/2026,v0.4.11,"fix: Corregido endpoint de obtención de grupos usando schoolService y recepción de avatar.
+debug: Añadidos logs detallados en el proceso de registro."
+20/09/2026,v0.4.10,"refactor: Optimización de validación de credenciales y unificación de controladores."
+17/09/2026,v0.4.9,"chore: Sincronización y mejoras de manejo de error 404 en Login."
+10/09/2026,v0.4.8,"chore: Sincronización y refinamiento del esquema de la base de datos."
+10/09/2026,v0.4.7,"feat: Soporte de is_available y jerarquía de grupos en la API."
+10/09/2026,v0.4.6,"feat: Soporte de school_id en actualizaciones y obtención de perfiles."
+04/09/2026,v0.4.5,"chore: Transición e inicialización de API PreuSync bajo licencia AGPLv3."
 31/08/2026,v0.4.0,"refactor: Sincronización total con el Plan Maestro de la App Android.
 refactor: Estandarización de documentación en headers y unificación de logs técnicos en español.
 feat: Preparación de endpoints para la versión estable v1.0.0."
