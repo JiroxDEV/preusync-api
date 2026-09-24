@@ -1,4 +1,6 @@
 release_date,version_name,details
+02/09/2026,v0.4.12,"fix: Corrección de inserción de perfil en Supabase eliminando columna inexistente 'group' de las inserciones en signUp.
+refactor: Alineación estricta de nombres de columnas (group_id, school_id) en consultas y actualizaciones de perfiles."
 31/08/2026,v0.4.0,"refactor: Sincronización total con el Plan Maestro de la App Android.
 refactor: Estandarización de documentación en headers y unificación de logs técnicos en español.
 feat: Preparación de endpoints para la versión estable v1.0.0."

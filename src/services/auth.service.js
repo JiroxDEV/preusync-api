@@ -2,7 +2,7 @@
  * ============================================================================
  * Proyecto: PreuSync API
  * Archivo: auth.service.js
- * Versión: v1.0.0
+ * Versión: v1.1.0
  * Descripción: Servicio de autenticación y gestión de usuarios. Maneja el
  *              registro, login, perfiles públicos, actualización de datos
  *              y renovación de sesiones (refresh tokens).
@@ -63,20 +63,19 @@ export async function signUp(username, password, userData) {
     throw new Error('Error de configuración en el servidor');
   }
 
-  // Construcción del objeto de perfil con nombres y apellidos segmentados.
+  // Construcción del objeto de perfil utilizando nombres de columna exactos de Supabase.
   const profile = {
     id: authData.user.id,
     username: username.trim(),
     first_name: userData.firstName || '',
     last_name: userData.lastName || '',
-    full_name: (userData.firstName || '') + ' ' + (userData.lastName || ''),
+    full_name: ((userData.firstName || '').trim() + ' ' + (userData.lastName || '').trim()).trim(),
     id_card: userData.idCard || '',
     role: userData.role || 'student',
     status: 'verified',
     avatar_url: userData.avatar || '',
     school_id: userData.schoolId || null,
     group_id: userData.groupId || null,
-    group: userData.groupName || '', // Para compatibilidad visual rápida
     tutee: userData.tutee || '',
     responsibilities: userData.responsibilities || ''
   };
@@ -164,7 +163,7 @@ export async function getUserByUsername(username) {
 
   const { data, error } = await supabase
     .from('profiles')
-    .select('username, first_name, last_name, full_name, avatar_url, role, "group", status, schools(name)')
+    .select('username, first_name, last_name, full_name, avatar_url, role, school_id, group_id, status, schools(name)')
     .ilike('username', username)
     .maybeSingle();
 
@@ -200,7 +199,7 @@ export async function updateUser(userId, updateData) {
   if (fetchError) throw new Error('Perfil no encontrado');
 
   // Campos permitidos para actualización directa.
-  const allowedFields = ['first_name', 'last_name', 'full_name', 'id_card', 'role', 'school_id', 'group', 'tutee', 'responsibilities', 'avatar_url', 'status'];
+  const allowedFields = ['first_name', 'last_name', 'full_name', 'id_card', 'role', 'school_id', 'group_id', 'tutee', 'responsibilities', 'avatar_url', 'status'];
   const updated = { ...existing };
   allowedFields.forEach(f => { if (updateData[f] !== undefined) updated[f] = updateData[f]; });
 
@@ -342,5 +341,3 @@ export async function deleteAccount(userId, password) {
   log(`✅ Cuenta eliminada exitosamente para: ${userId}`, 'INFO');
   return { success: true };
 }
-
-
