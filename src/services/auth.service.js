@@ -2,10 +2,9 @@
  * ============================================================================
  * Proyecto: PreuSync API
  * Archivo: auth.service.js
- * Versión: v1.1.0
- * Descripción: Servicio de autenticación y gestión de usuarios. Maneja el
- *              registro, login, perfiles públicos, actualización de datos
- *              y renovación de sesiones (refresh tokens).
+ * Versión: v1.2.0
+ * Descripción: Servicio de autenticación y gestión de usuarios. Incluye lógica
+ *              de auto-recuperación para usuarios huérfanos en Supabase Auth.
  * Autor: JiroxDEV
  * Licensed under the GNU Affero General Public License v3
  * ============================================================================
@@ -28,11 +27,12 @@ const logError = (message, error, metadata = {}) => {
 
 /**
  * Registra un nuevo usuario creando la cuenta en Auth y su perfil en la DB.
+ * Soporta auto-recuperación de perfiles para usuarios existentes en Auth sin fila en DB.
  */
 export async function signUp(username, password, userData) {
   log(`🔐 Iniciando proceso de registro para: ${username}`);
 
-  // Validación de unicidad de nombre de usuario (ignora mayúsculas/minúsculas).
+  // Validación de unicidad de nombre de usuario en perfiles existentes.
   const { data: existingUser } = await supabase
     .from('profiles')
     .select('username')
@@ -50,12 +50,28 @@ export async function signUp(username, password, userData) {
     if (existingId) throw new Error('El número de carnet ya está registrado');
   }
 
-  // Creación del usuario en el sistema de autenticación de Supabase (email ficticio interno).
   const email = `${username}@preusync.com`.toLowerCase();
-  const { data: authData, error: authError } = await supabase.auth.signUp({ email, password });
+  let authData;
+
+  // Intento de creación en Supabase Auth
+  const { data: signUpData, error: authError } = await supabase.auth.signUp({ email, password });
+
   if (authError) {
-    logError(`❌ Fallo en registro de autenticación para ${email}`, authError);
-    throw new Error(authError.message);
+    const errText = authError.message ? authError.message.toLowerCase() : '';
+    if (errText.includes('already registered') || errText.includes('already exists')) {
+      log(`⚠️ El usuario ${username} ya existe en Auth. Probando autenticación para auto-recuperación de perfil...`, 'WARN');
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInError) {
+        logError(`❌ Contraseña incorrecta para usuario existente en Auth: ${username}`, signInError);
+        throw new Error('El nombre de usuario ya está registrado');
+      }
+      authData = signInData;
+    } else {
+      logError(`❌ Fallo en registro de autenticación para ${email}`, authError);
+      throw new Error(authError.message);
+    }
+  } else {
+    authData = signUpData;
   }
 
   if (!supabaseAdmin) {
@@ -80,23 +96,16 @@ export async function signUp(username, password, userData) {
     responsibilities: userData.responsibilities || ''
   };
 
-  log(`💾 Intentando insertar perfil para ${username}`, 'INFO', { profile });
+  log(`💾 Insertando/Restaurando perfil para ${username}`, 'INFO', { profile });
 
   // Inserción del perfil mediante cliente Admin para ignorar políticas de RLS restrictivas.
-  const { error: insertError } = await supabaseAdmin.from('profiles').insert(profile);
+  const { error: insertError } = await supabaseAdmin.from('profiles').upsert(profile);
   if (insertError) {
     logError(`❌ Error al crear perfil para el usuario: ${authData.user.id}`, insertError);
-    // Rollback: Si falla la creación del perfil, eliminamos el usuario de Auth para evitar inconsistencias.
-    try {
-      await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
-      log(`🗑️ Usuario de autenticación ${authData.user.id} eliminado por fallo en perfil`, 'INFO');
-    } catch (cleanupError) {
-      logError('⚠️ No se pudo limpiar el usuario de autenticación', cleanupError);
-    }
     throw new Error(`Fallo en la creación del perfil: ${insertError.message}`);
   }
 
-  log(`✅ Usuario ${username} creado exitosamente (ID: ${authData.user.id})`, 'INFO');
+  log(`✅ Usuario ${username} registrado y configurado exitosamente (ID: ${authData.user.id})`, 'INFO');
   return {
     user: authData.user,
     profile,
@@ -112,39 +121,53 @@ export async function signUp(username, password, userData) {
 export async function login(username, password) {
   log(`🔐 Intento de inicio de sesión: ${username}`);
 
-  // Primero verificamos que el perfil exista y no esté bloqueado.
-  const { data: profile, error: profileError } = await supabase
-    .from('profiles')
-    .select('*, schools(name)')
-    .ilike('username', username)
-    .maybeSingle();
-
-  if (profileError) {
-    logError(`❌ Error de DB al buscar usuario: ${username}`, profileError);
-    throw new Error('Error de base de datos');
-  }
-  if (!profile) throw new Error('Usuario no encontrado');
-
-  // Mapeo para compatibilidad con el frontend (nombre de la escuela).
-  if (profile.schools) {
-    profile.school = profile.schools.name;
-    delete profile.schools;
-  }
-
-  // Bloqueo de acceso para usuarios baneados.
-  if (profile.status === 'banned') {
-    log(`⛔ Usuario ${username} está baneado`, 'WARN');
-    throw new Error(`Esta cuenta ha sido suspendida`);
-  }
-
   const email = `${username}@preusync.com`.toLowerCase();
+
+  // 1. Validación de credenciales con Supabase Auth
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) {
     logError(`❌ Fallo en el login para ${username}`, error);
     throw new Error('Credenciales inválidas');
   }
 
-  log(`✅ Usuario ${username} ha iniciado sesión (ID: ${data.user.id})`, 'INFO');
+  // 2. Búsqueda del perfil en la base de datos
+  let { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('*, schools(name)')
+    .ilike('username', username)
+    .maybeSingle();
+
+  // Auto-recuperación si el perfil no existía en la DB
+  if (!profile) {
+    log(`⚠️ Perfil faltante para usuario autenticado ${username}. Creando perfil por defecto...`, 'WARN');
+    const fallbackProfile = {
+      id: data.user.id,
+      username: username.trim(),
+      full_name: username.trim(),
+      role: 'student',
+      status: 'verified'
+    };
+    if (supabaseAdmin) {
+      await supabaseAdmin.from('profiles').upsert(fallbackProfile);
+      profile = fallbackProfile;
+    } else {
+      throw new Error('Usuario no encontrado');
+    }
+  }
+
+  // Bloqueo de acceso para usuarios baneados.
+  if (profile.status === 'banned') {
+    log(`⛔ Usuario ${username} está baneado`, 'WARN');
+    throw new Error('Esta cuenta ha sido suspendida');
+  }
+
+  // Mapeo para compatibilidad con el frontend.
+  if (profile.schools) {
+    profile.school = profile.schools.name;
+    delete profile.schools;
+  }
+
+  log(`✅ Usuario ${username} ha iniciado sesión exitosamente (ID: ${data.user.id})`, 'INFO');
   return {
     user: data.user,
     profile,
@@ -172,7 +195,6 @@ export async function getUserByUsername(username) {
     throw new Error('Usuario no encontrado');
   }
 
-  // Mapeo para el frontend.
   if (data.schools) {
     data.school = data.schools.name;
     delete data.schools;
@@ -198,12 +220,10 @@ export async function updateUser(userId, updateData) {
 
   if (fetchError) throw new Error('Perfil no encontrado');
 
-  // Campos permitidos para actualización directa.
   const allowedFields = ['first_name', 'last_name', 'full_name', 'id_card', 'role', 'school_id', 'group_id', 'tutee', 'responsibilities', 'avatar_url', 'status'];
   const updated = { ...existing };
   allowedFields.forEach(f => { if (updateData[f] !== undefined) updated[f] = updateData[f]; });
 
-  // Si se cambia el username, verificar que el nuevo no esté ocupado.
   if (updateData.username && updateData.username !== existing.username) {
     const { data: conflict } = await supabaseAdmin
       .from('profiles')
@@ -214,7 +234,6 @@ export async function updateUser(userId, updateData) {
     updated.username = updateData.username;
   }
 
-  // Sincronización automática de full_name si cambian nombres o apellidos.
   if (updateData.first_name !== undefined || updateData.last_name !== undefined) {
     updated.full_name = (updated.first_name || '') + ' ' + (updated.last_name || '');
   }
@@ -261,7 +280,6 @@ export async function refreshSession(refreshToken) {
  */
 export async function logout(userId) {
   log(`🔐 Logout registrado para: ${userId}`, 'INFO');
-  // En Supabase client-side esto invalida localmente; aquí registramos la intención.
   return { success: true };
 }
 
@@ -281,7 +299,7 @@ export async function verifyPassword(username, password) {
 }
 
 /**
- * Verifica si un nombre de usuario existe en la plataforma (Útil para Tutores).
+ * Verifica si un nombre de usuario existe en la plataforma.
  */
 export async function checkUsernameExists(username) {
   log(`🔍 Verificando existencia de usuario: ${username}`);
@@ -314,11 +332,9 @@ export async function deleteAccount(userId, password) {
 
   if (fetchError || !profile) throw new Error('Perfil no encontrado');
 
-  // Obligatorio verificar contraseña antes de una acción destructiva.
   const { valid } = await verifyPassword(profile.username, password);
   if (!valid) throw new Error('Contraseña incorrecta');
 
-  // Eliminación del perfil en la DB.
   const { error: delProfile } = await supabaseAdmin
     .from('profiles')
     .delete()
@@ -329,7 +345,6 @@ export async function deleteAccount(userId, password) {
     throw new Error('Fallo al eliminar datos del perfil');
   }
 
-  // Eliminación del usuario en el sistema de Auth.
   if (supabaseAdmin) {
     try {
       await supabaseAdmin.auth.admin.deleteUser(userId);
