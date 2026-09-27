@@ -81,8 +81,15 @@ router.post('/auth/logout', authenticate, async (req, res) => {
 
 router.get('/auth/me', authenticate, async (req, res) => {
   try {
-    const { data, error } = await supabase.from('profiles').select('*').eq('id', req.user.id).single();
+    const { data, error } = await supabase.from('profiles').select('*, schools(name)').eq('id', req.user.id).maybeSingle();
     if (error) throw error;
+    if (!data) {
+      return res.status(404).json({ success: false, error: 'Perfil no encontrado' });
+    }
+    if (data.schools) {
+      data.school = data.schools.name;
+      delete data.schools;
+    }
     res.json({ success: true, user: req.user, profile: data });
   } catch (error) { res.status(400).json({ success: false, error: error.message }); }
 });
