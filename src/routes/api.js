@@ -81,8 +81,21 @@ router.post('/auth/logout', authenticate, async (req, res) => {
 
 router.get('/auth/me', authenticate, async (req, res) => {
   try {
-    const { data, error } = await supabase.from('profiles').select('*, schools(name)').eq('id', req.user.id).maybeSingle();
+    let { data, error } = await supabase.from('profiles').select('*, schools(name)').eq('id', req.user.id).maybeSingle();
     if (error) throw error;
+
+    // Self-healing: Si no existe por ID, buscar por username derivado del email
+    if (!data && req.user.email && req.user.email.includes('@')) {
+      const username = req.user.email.split('@')[0];
+      const fallbackQuery = await supabase.from('profiles').select('*, schools(name)').ilike('username', username).maybeSingle();
+      if (fallbackQuery.data) {
+        data = fallbackQuery.data;
+        if (supabaseAdmin) {
+          await supabaseAdmin.from('profiles').update({ id: req.user.id }).ilike('username', username);
+        }
+      }
+    }
+
     if (!data) {
       return res.status(404).json({ success: false, error: 'Perfil no encontrado' });
     }
@@ -90,8 +103,25 @@ router.get('/auth/me', authenticate, async (req, res) => {
       data.school = data.schools.name;
       delete data.schools;
     }
-    res.json({ success: true, user: req.user, profile: data });
+    res.json({ success: true, user: req.user, data: data, profile: data });
   } catch (error) { res.status(400).json({ success: false, error: error.message }); }
+});
+
+// --- PERFIL Y PUBLICACIONES PERSONALES ---
+router.get('/profile/posts', authenticate, async (req, res) => {
+  try {
+    const start = parseInt(req.query.start) || 0;
+    const count = parseInt(req.query.count) || 10;
+    const data = await postService.getPostsByAuthor(req.user.id, start, count);
+    res.json({ success: true, data });
+  } catch (error) { res.status(500).json({ success: false, error: error.message }); }
+});
+
+router.get('/profile/stats', authenticate, async (req, res) => {
+  try {
+    const data = await postService.getUserStats(req.user.id);
+    res.json({ success: true, data });
+  } catch (error) { res.status(500).json({ success: false, error: error.message }); }
 });
 
 router.put('/auth/me', authenticate, async (req, res) => {
