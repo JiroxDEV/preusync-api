@@ -97,7 +97,23 @@ router.get('/auth/me', authenticate, async (req, res) => {
     }
 
     if (!data) {
-      return res.status(404).json({ success: false, error: 'Perfil no encontrado' });
+      log(`⚠️ Perfil no encontrado en DB para usuario ${req.user.id}. Autocreando perfil de rescate...`, 'WARN');
+      const uName = (req.user.email && req.user.email.includes('@')) ? req.user.email.split('@')[0] : 'Usuario';
+      const fallbackProfile = {
+        id: req.user.id,
+        username: uName,
+        full_name: uName,
+        first_name: uName,
+        last_name: '',
+        role: 'student',
+        status: 'verified'
+      };
+      if (supabaseAdmin) {
+        await supabaseAdmin.from('profiles').upsert(fallbackProfile);
+        data = fallbackProfile;
+      } else {
+        return res.status(404).json({ success: false, error: 'Perfil no encontrado' });
+      }
     }
     if (data.schools) {
       data.school = data.schools.name;
