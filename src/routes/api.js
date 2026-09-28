@@ -194,6 +194,14 @@ router.get('/auth/exists/:username', async (req, res) => {
 });
 
 // --- POSTS ---
+router.get('/posts/top', optionalAuthenticate, async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 5;
+    const data = await postService.getTopPosts(limit, req.user?.id);
+    res.json({ success: true, data });
+  } catch (error) { res.status(500).json({ success: false, error: error.message }); }
+});
+
 router.get('/posts/range', async (req, res) => {
   try { const data = await postService.getPostsRange(req.query.start, req.query.count, req.user?.id); res.json({ success: true, data }); }
   catch (error) { res.status(500).json({ success: false, error: error.message }); }
@@ -210,6 +218,14 @@ router.post('/posts/:id/vote', authenticate, async (req, res) => {
 });
 
 // --- NEWS ---
+router.get('/news/top', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 5;
+    const data = await newsService.getTopNews(limit);
+    res.json({ success: true, data });
+  } catch (error) { res.status(500).json({ success: false, error: error.message }); }
+});
+
 router.get('/news/range', async (req, res) => {
   try { const data = await newsService.getNewsRange(req.query.start, req.query.count); res.json({ success: true, data }); }
   catch (error) { res.status(500).json({ success: false, error: error.message }); }
