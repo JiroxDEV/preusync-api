@@ -81,44 +81,51 @@ router.post('/auth/logout', authenticate, async (req, res) => {
 
 router.get('/auth/me', authenticate, async (req, res) => {
   try {
-    let { data, error } = await supabase.from('profiles').select('*, schools(name)').eq('id', req.user.id).maybeSingle();
+    let { data, error } = await supabase
+      .from('profiles')
+      .select('*, schools(name, municipalities(name, provinces(name))), school_groups(name)')
+      .eq('id', req.user.id)
+      .maybeSingle();
+
     if (error) throw error;
 
     // Self-healing: Si no existe por ID, buscar por username derivado del email
     if (!data && req.user.email && req.user.email.includes('@')) {
       const username = req.user.email.split('@')[0];
-      const fallbackQuery = await supabase.from('profiles').select('*, schools(name)').ilike('username', username).maybeSingle();
+      const fallbackQuery = await supabase
+        .from('profiles')
+        .select('*, schools(name, municipalities(name, provinces(name))), school_groups(name)')
+        .ilike('username', username)
+        .maybeSingle();
+
       if (fallbackQuery.data) {
         data = fallbackQuery.data;
-        if (supabaseAdmin) {
+        if (supabaseAdmin && data.id !== req.user.id) {
           await supabaseAdmin.from('profiles').update({ id: req.user.id }).ilike('username', username);
         }
       }
     }
 
     if (!data) {
-      log(`⚠️ Perfil no encontrado en DB para usuario ${req.user.id}. Autocreando perfil de rescate...`, 'WARN');
-      const uName = (req.user.email && req.user.email.includes('@')) ? req.user.email.split('@')[0] : 'Usuario';
-      const fallbackProfile = {
-        id: req.user.id,
-        username: uName,
-        full_name: uName,
-        first_name: uName,
-        last_name: '',
-        role: 'student',
-        status: 'verified'
-      };
-      if (supabaseAdmin) {
-        await supabaseAdmin.from('profiles').upsert(fallbackProfile);
-        data = fallbackProfile;
-      } else {
-        return res.status(404).json({ success: false, error: 'Perfil no encontrado' });
-      }
+      log(`⚠️ Perfil no encontrado en DB para usuario ${req.user.id}`, 'WARN');
+      return res.status(404).json({ success: false, error: 'Perfil no encontrado' });
     }
+
     if (data.schools) {
-      data.school = data.schools.name;
+      data.school = data.schools.name || '';
+      if (data.schools.municipalities) {
+        data.municipality = data.schools.municipalities.name || '';
+        if (data.schools.municipalities.provinces) {
+          data.province = data.schools.municipalities.provinces.name || '';
+        }
+      }
       delete data.schools;
     }
+    if (data.school_groups) {
+      data.group = data.school_groups.name || '';
+      delete data.school_groups;
+    }
+
     res.json({ success: true, user: req.user, data: data, profile: data });
   } catch (error) { res.status(400).json({ success: false, error: error.message }); }
 });
