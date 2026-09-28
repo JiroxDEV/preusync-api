@@ -2,9 +2,9 @@
  * ============================================================================
  * Proyecto: PreuSync API
  * Archivo: auth.service.js
- * Versión: v1.2.0
- * Descripción: Servicio de autenticación y gestión de usuarios. Incluye lógica
- *              de auto-recuperación para usuarios huérfanos en Supabase Auth.
+ * Versión: v1.3.0
+ * Descripción: Servicio de autenticación y gestión de usuarios. Incluye
+ *              resolución automática de relaciones (Escuelas, Municipios, Provincias, Grupos).
  * Autor: JiroxDEV
  * Licensed under the GNU Affero General Public License v3
  * ============================================================================
@@ -109,7 +109,8 @@ export async function signUp(username, password, userData) {
   return {
     user: authData.user,
     profile,
-    sessionToken: authData.session?.access_token || null
+    sessionToken: authData.session?.access_token || null,
+    refreshToken: authData.session?.refresh_token || null
   };
 }
 
@@ -130,10 +131,10 @@ export async function login(username, password) {
     throw new Error('Credenciales inválidas');
   }
 
-  // 2. Búsqueda del perfil en la base de datos
+  // 2. Búsqueda del perfil con uniones jerárquicas (Escuela, Municipio, Provincia, Grupo)
   let { data: profile, error: profileError } = await supabase
     .from('profiles')
-    .select('*, schools(name)')
+    .select('*, schools(name, municipalities(name, provinces(name))), school_groups(name)')
     .ilike('username', username)
     .maybeSingle();
 
@@ -161,10 +162,20 @@ export async function login(username, password) {
     throw new Error('Esta cuenta ha sido suspendida');
   }
 
-  // Mapeo para compatibilidad con el frontend.
+  // Mapeo jerárquico de ubicación para el cliente Android.
   if (profile.schools) {
-    profile.school = profile.schools.name;
+    profile.school = profile.schools.name || '';
+    if (profile.schools.municipalities) {
+      profile.municipality = profile.schools.municipalities.name || '';
+      if (profile.schools.municipalities.provinces) {
+        profile.province = profile.schools.municipalities.provinces.name || '';
+      }
+    }
     delete profile.schools;
+  }
+  if (profile.school_groups) {
+    profile.group = profile.school_groups.name || '';
+    delete profile.school_groups;
   }
 
   log(`✅ Usuario ${username} ha iniciado sesión exitosamente (ID: ${data.user.id})`, 'INFO');
@@ -186,7 +197,7 @@ export async function getUserByUsername(username) {
 
   const { data, error } = await supabase
     .from('profiles')
-    .select('username, first_name, last_name, full_name, avatar_url, role, school_id, group_id, status, schools(name)')
+    .select('username, first_name, last_name, full_name, avatar_url, role, school_id, group_id, status, schools(name, municipalities(name, provinces(name))), school_groups(name)')
     .ilike('username', username)
     .maybeSingle();
 
@@ -196,8 +207,18 @@ export async function getUserByUsername(username) {
   }
 
   if (data.schools) {
-    data.school = data.schools.name;
+    data.school = data.schools.name || '';
+    if (data.schools.municipalities) {
+      data.municipality = data.schools.municipalities.name || '';
+      if (data.schools.municipalities.provinces) {
+        data.province = data.schools.municipalities.provinces.name || '';
+      }
+    }
     delete data.schools;
+  }
+  if (data.school_groups) {
+    data.group = data.school_groups.name || '';
+    delete data.school_groups;
   }
   return data;
 }
