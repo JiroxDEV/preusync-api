@@ -2,9 +2,9 @@
  * ============================================================================
  * Proyecto: PreuSync API
  * Archivo: auth.service.js
- * Versión: v1.3.0
- * Descripción: Servicio de autenticación y gestión de usuarios. Incluye
- *              resolución automática de relaciones (Escuelas, Municipios, Provincias, Grupos).
+ * Versión: v1.4.0
+ * Descripción: Servicio de autenticación y gestión de usuarios. Guarda
+ *              metadatos enriquecidos en Supabase Auth y auto-recupera perfiles.
  * Autor: JiroxDEV
  * Licensed under the GNU Affero General Public License v3
  * ============================================================================
@@ -27,7 +27,7 @@ const logError = (message, error, metadata = {}) => {
 
 /**
  * Registra un nuevo usuario creando la cuenta en Auth y su perfil en la DB.
- * Soporta auto-recuperación de perfiles para usuarios existentes en Auth sin fila en DB.
+ * Guarda metadatos en Auth para asegurar la auto-recuperación de perfiles completos.
  */
 export async function signUp(username, password, userData) {
   log(`🔐 Iniciando proceso de registro para: ${username}`);
@@ -53,8 +53,25 @@ export async function signUp(username, password, userData) {
   const email = `${username}@preusync.com`.toLowerCase();
   let authData;
 
-  // Intento de creación en Supabase Auth
-  const { data: signUpData, error: authError } = await supabase.auth.signUp({ email, password });
+  const metadataPayload = {
+    username: username.trim(),
+    firstName: userData.firstName || '',
+    lastName: userData.lastName || '',
+    idCard: userData.idCard || '',
+    role: userData.role || 'student',
+    schoolId: userData.schoolId || null,
+    groupId: userData.groupId || null,
+    avatar: userData.avatar || '',
+    tutee: userData.tutee || '',
+    responsibilities: userData.responsibilities || ''
+  };
+
+  // Intento de creación en Supabase Auth guardando los metadatos
+  const { data: signUpData, error: authError } = await supabase.auth.signUp({
+    email,
+    password,
+    options: { data: metadataPayload }
+  });
 
   if (authError) {
     const errText = authError.message ? authError.message.toLowerCase() : '';
@@ -138,16 +155,29 @@ export async function login(username, password) {
     .ilike('username', username)
     .maybeSingle();
 
-  // Auto-recuperación si el perfil no existía en la DB
+  // Auto-recuperación si el perfil no existía en la DB extrayendo metadatos de Auth
   if (!profile) {
-    log(`⚠️ Perfil faltante para usuario autenticado ${username}. Creando perfil por defecto...`, 'WARN');
+    log(`⚠️ Perfil faltante para usuario autenticado ${username}. Creando desde metadatos...`, 'WARN');
+    const meta = data.user.user_metadata || {};
+    const fName = meta.firstName || meta.first_name || username.trim();
+    const lName = meta.lastName || meta.last_name || '';
+
     const fallbackProfile = {
       id: data.user.id,
       username: username.trim(),
-      full_name: username.trim(),
-      role: 'student',
-      status: 'verified'
+      first_name: fName,
+      last_name: lName,
+      full_name: (fName + ' ' + lName).trim(),
+      id_card: meta.idCard || meta.id_card || '',
+      role: meta.role || 'student',
+      status: 'verified',
+      avatar_url: meta.avatar || meta.avatar_url || '',
+      school_id: meta.schoolId || meta.school_id || null,
+      group_id: meta.groupId || meta.group_id || null,
+      tutee: meta.tutee || '',
+      responsibilities: meta.responsibilities || ''
     };
+
     if (supabaseAdmin) {
       await supabaseAdmin.from('profiles').upsert(fallbackProfile);
       profile = fallbackProfile;
