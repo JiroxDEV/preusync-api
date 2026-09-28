@@ -81,53 +81,88 @@ router.post('/auth/logout', authenticate, async (req, res) => {
 
 router.get('/auth/me', authenticate, async (req, res) => {
   try {
+    log(`🔍 GET /auth/me para req.user.id: ${req.user.id}`, 'INFO');
+
     let { data, error } = await supabase
       .from('profiles')
-      .select('*, schools(name, municipalities(name, provinces(name))), school_groups(name)')
+      .select('*')
       .eq('id', req.user.id)
       .maybeSingle();
 
-    if (error) throw error;
+    if (error) {
+      logError(`❌ Error de DB en /auth/me para ${req.user.id}`, error);
+      throw error;
+    }
 
-    // Self-healing: Si no existe por ID, buscar por username derivado del email
+    // Fallback: Buscar por username si no se encuentra por id de Auth
     if (!data && req.user.email && req.user.email.includes('@')) {
       const username = req.user.email.split('@')[0];
+      log(`⚠️ Perfil no encontrado por ID (${req.user.id}). Buscando por username: ${username}`, 'WARN');
       const fallbackQuery = await supabase
         .from('profiles')
-        .select('*, schools(name, municipalities(name, provinces(name))), school_groups(name)')
+        .select('*')
         .ilike('username', username)
         .maybeSingle();
 
       if (fallbackQuery.data) {
         data = fallbackQuery.data;
         if (supabaseAdmin && data.id !== req.user.id) {
-          await supabaseAdmin.from('profiles').update({ id: req.user.id }).ilike('username', username);
+          await supabaseAdmin.from('profiles').update({ id: req.user.id }).eq('id', data.id);
         }
       }
     }
 
     if (!data) {
-      log(`⚠️ Perfil no encontrado en DB para usuario ${req.user.id}`, 'WARN');
+      log(`❌ Perfil no encontrado en DB para usuario ${req.user.id}`, 'WARN');
       return res.status(404).json({ success: false, error: 'Perfil no encontrado' });
     }
 
-    if (data.schools) {
-      data.school = data.schools.name || '';
-      if (data.schools.municipalities) {
-        data.municipality = data.schools.municipalities.name || '';
-        if (data.schools.municipalities.provinces) {
-          data.province = data.schools.municipalities.provinces.name || '';
+    // Enriquecimiento de escuela, municipio y provincia
+    if (data.school_id) {
+      try {
+        const { data: schoolData } = await supabase
+          .from('schools')
+          .select('name, municipalities(name, provinces(name))')
+          .eq('id', data.school_id)
+          .maybeSingle();
+
+        if (schoolData) {
+          data.school = schoolData.name || '';
+          if (schoolData.municipalities) {
+            data.municipality = schoolData.municipalities.name || '';
+            if (schoolData.municipalities.provinces) {
+              data.province = schoolData.municipalities.provinces.name || '';
+            }
+          }
         }
+      } catch (schErr) {
+        logError('Error al enriquecer datos de escuela', schErr);
       }
-      delete data.schools;
-    }
-    if (data.school_groups) {
-      data.group = data.school_groups.name || '';
-      delete data.school_groups;
     }
 
+    // Enriquecimiento del grupo escolar
+    if (data.group_id) {
+      try {
+        const { data: groupData } = await supabase
+          .from('school_groups')
+          .select('name')
+          .eq('id', data.group_id)
+          .maybeSingle();
+
+        if (groupData) {
+          data.group = groupData.name || '';
+        }
+      } catch (grpErr) {
+        logError('Error al enriquecer datos de grupo', grpErr);
+      }
+    }
+
+    log(`✅ Perfil recuperado exitosamente para: ${data.username}`, 'INFO');
     res.json({ success: true, user: req.user, data: data, profile: data });
-  } catch (error) { res.status(400).json({ success: false, error: error.message }); }
+  } catch (error) {
+    logError('❌ Excepción en /auth/me', error);
+    res.status(400).json({ success: false, error: error.message });
+  }
 });
 
 // --- PERFIL Y PUBLICACIONES PERSONALES ---
