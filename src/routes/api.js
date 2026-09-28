@@ -82,8 +82,9 @@ router.post('/auth/logout', authenticate, async (req, res) => {
 router.get('/auth/me', authenticate, async (req, res) => {
   try {
     log(`🔍 GET /auth/me para req.user.id: ${req.user.id}`, 'INFO');
+    const db = supabaseAdmin || supabase;
 
-    let { data, error } = await supabase
+    let { data, error } = await db
       .from('profiles')
       .select('*')
       .eq('id', req.user.id)
@@ -98,7 +99,7 @@ router.get('/auth/me', authenticate, async (req, res) => {
     if (!data && req.user.email && req.user.email.includes('@')) {
       const username = req.user.email.split('@')[0];
       log(`⚠️ Perfil no encontrado por ID (${req.user.id}). Buscando por username: ${username}`, 'WARN');
-      const fallbackQuery = await supabase
+      const fallbackQuery = await db
         .from('profiles')
         .select('*')
         .ilike('username', username)
@@ -120,7 +121,7 @@ router.get('/auth/me', authenticate, async (req, res) => {
     // Enriquecimiento de escuela, municipio y provincia
     if (data.school_id) {
       try {
-        const { data: schoolData } = await supabase
+        const { data: schoolData } = await db
           .from('schools')
           .select('name, municipalities(name, provinces(name))')
           .eq('id', data.school_id)
@@ -143,7 +144,7 @@ router.get('/auth/me', authenticate, async (req, res) => {
     // Enriquecimiento del grupo escolar
     if (data.group_id) {
       try {
-        const { data: groupData } = await supabase
+        const { data: groupData } = await db
           .from('school_groups')
           .select('name')
           .eq('id', data.group_id)

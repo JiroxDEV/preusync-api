@@ -2,9 +2,9 @@
  * ============================================================================
  * Proyecto: PreuSync API
  * Archivo: auth.service.js
- * Versión: v1.4.0
- * Descripción: Servicio de autenticación y gestión de usuarios. Guarda
- *              metadatos enriquecidos en Supabase Auth y auto-recupera perfiles.
+ * Versión: v1.5.0
+ * Descripción: Servicio de autenticación y gestión de usuarios. Utiliza cliente
+ *              admin/service_role para bypass de RLS en lectura/escritura de perfiles.
  * Autor: JiroxDEV
  * Licensed under the GNU Affero General Public License v3
  * ============================================================================
@@ -12,7 +12,7 @@
 
 import { supabase, supabaseAdmin } from '../config/supabase.js';
 
-// Sistema de logs interno para trazabilidad de autenticación.
+// Logger de autenticación
 const log = (message, level = 'INFO', metadata = {}) => {
   const timestamp = new Date().toISOString();
   const metaStr = Object.keys(metadata).length ? ` | ${JSON.stringify(metadata)}` : '';
@@ -27,22 +27,21 @@ const logError = (message, error, metadata = {}) => {
 
 /**
  * Registra un nuevo usuario creando la cuenta en Auth y su perfil en la DB.
- * Guarda metadatos en Auth para asegurar la auto-recuperación de perfiles completos.
  */
 export async function signUp(username, password, userData) {
   log(`🔐 Iniciando proceso de registro para: ${username}`);
+  const db = supabaseAdmin || supabase;
 
-  // Validación de unicidad de nombre de usuario en perfiles existentes.
-  const { data: existingUser } = await supabase
+  // Validación de unicidad de nombre de usuario
+  const { data: existingUser } = await db
     .from('profiles')
     .select('username')
     .ilike('username', username)
     .maybeSingle();
   if (existingUser) throw new Error('El nombre de usuario ya está en uso');
 
-  // Validación de unicidad de Cédula de Identidad si se proporciona.
   if (userData.idCard) {
-    const { data: existingId } = await supabase
+    const { data: existingId } = await db
       .from('profiles')
       .select('id_card')
       .eq('id_card', userData.idCard)
@@ -66,7 +65,6 @@ export async function signUp(username, password, userData) {
     responsibilities: userData.responsibilities || ''
   };
 
-  // Intento de creación en Supabase Auth guardando los metadatos
   const { data: signUpData, error: authError } = await supabase.auth.signUp({
     email,
     password,
@@ -76,7 +74,7 @@ export async function signUp(username, password, userData) {
   if (authError) {
     const errText = authError.message ? authError.message.toLowerCase() : '';
     if (errText.includes('already registered') || errText.includes('already exists')) {
-      log(`⚠️ El usuario ${username} ya existe en Auth. Probando autenticación para auto-recuperación de perfil...`, 'WARN');
+      log(`⚠️ El usuario ${username} ya existe en Auth. Probando autenticación para auto-recuperación...`, 'WARN');
       const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
       if (signInError) {
         logError(`❌ Contraseña incorrecta para usuario existente en Auth: ${username}`, signInError);
@@ -96,7 +94,6 @@ export async function signUp(username, password, userData) {
     throw new Error('Error de configuración en el servidor');
   }
 
-  // Construcción del objeto de perfil utilizando nombres de columna exactos de Supabase.
   const profile = {
     id: authData.user.id,
     username: username.trim(),
@@ -115,7 +112,6 @@ export async function signUp(username, password, userData) {
 
   log(`💾 Insertando/Restaurando perfil para ${username}`, 'INFO', { profile });
 
-  // Inserción del perfil mediante cliente Admin para ignorar políticas de RLS restrictivas.
   const { error: insertError } = await supabaseAdmin.from('profiles').upsert(profile);
   if (insertError) {
     logError(`❌ Error al crear perfil para el usuario: ${authData.user.id}`, insertError);
@@ -138,24 +134,21 @@ export async function signUp(username, password, userData) {
  */
 export async function login(username, password) {
   log(`🔐 Intento de inicio de sesión: ${username}`);
-
+  const db = supabaseAdmin || supabase;
   const email = `${username}@preusync.com`.toLowerCase();
 
-  // 1. Validación de credenciales con Supabase Auth
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) {
     logError(`❌ Fallo en el login para ${username}`, error);
     throw new Error('Credenciales inválidas');
   }
 
-  // 2. Búsqueda del perfil con uniones jerárquicas (Escuela, Municipio, Provincia, Grupo)
-  let { data: profile, error: profileError } = await supabase
+  let { data: profile } = await db
     .from('profiles')
-    .select('*, schools(name, municipalities(name, provinces(name))), school_groups(name)')
+    .select('*')
     .ilike('username', username)
     .maybeSingle();
 
-  // Auto-recuperación si el perfil no existía en la DB extrayendo metadatos de Auth
   if (!profile) {
     log(`⚠️ Perfil faltante para usuario autenticado ${username}. Creando desde metadatos...`, 'WARN');
     const meta = data.user.user_metadata || {};
@@ -186,26 +179,42 @@ export async function login(username, password) {
     }
   }
 
-  // Bloqueo de acceso para usuarios baneados.
   if (profile.status === 'banned') {
     log(`⛔ Usuario ${username} está baneado`, 'WARN');
     throw new Error('Esta cuenta ha sido suspendida');
   }
 
-  // Mapeo jerárquico de ubicación para el cliente Android.
-  if (profile.schools) {
-    profile.school = profile.schools.name || '';
-    if (profile.schools.municipalities) {
-      profile.municipality = profile.schools.municipalities.name || '';
-      if (profile.schools.municipalities.provinces) {
-        profile.province = profile.schools.municipalities.provinces.name || '';
+  // Enriquecimiento de escuela y ubicación
+  if (profile.school_id) {
+    try {
+      const { data: schData } = await db
+        .from('schools')
+        .select('name, municipalities(name, provinces(name))')
+        .eq('id', profile.school_id)
+        .maybeSingle();
+
+      if (schData) {
+        profile.school = schData.name || '';
+        if (schData.municipalities) {
+          profile.municipality = schData.municipalities.name || '';
+          if (schData.municipalities.provinces) {
+            profile.province = schData.municipalities.provinces.name || '';
+          }
+        }
       }
-    }
-    delete profile.schools;
+    } catch (ignored) {}
   }
-  if (profile.school_groups) {
-    profile.group = profile.school_groups.name || '';
-    delete profile.school_groups;
+
+  if (profile.group_id) {
+    try {
+      const { data: grpData } = await db
+        .from('school_groups')
+        .select('name')
+        .eq('id', profile.group_id)
+        .maybeSingle();
+
+      if (grpData) profile.group = grpData.name || '';
+    } catch (ignored) {}
   }
 
   log(`✅ Usuario ${username} ha iniciado sesión exitosamente (ID: ${data.user.id})`, 'INFO');
@@ -219,15 +228,13 @@ export async function login(username, password) {
 
 // ==================== PERFILES PÚBLICOS ====================
 
-/**
- * Obtiene la información pública de un usuario mediante su username.
- */
 export async function getUserByUsername(username) {
   log(`👤 Obteniendo perfil público: ${username}`, 'INFO');
+  const db = supabaseAdmin || supabase;
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('profiles')
-    .select('username, first_name, last_name, full_name, avatar_url, role, school_id, group_id, status, schools(name, municipalities(name, provinces(name))), school_groups(name)')
+    .select('*')
     .ilike('username', username)
     .maybeSingle();
 
@@ -236,28 +243,43 @@ export async function getUserByUsername(username) {
     throw new Error('Usuario no encontrado');
   }
 
-  if (data.schools) {
-    data.school = data.schools.name || '';
-    if (data.schools.municipalities) {
-      data.municipality = data.schools.municipalities.name || '';
-      if (data.schools.municipalities.provinces) {
-        data.province = data.schools.municipalities.provinces.name || '';
+  if (data.school_id) {
+    try {
+      const { data: schData } = await db
+        .from('schools')
+        .select('name, municipalities(name, provinces(name))')
+        .eq('id', data.school_id)
+        .maybeSingle();
+
+      if (schData) {
+        data.school = schData.name || '';
+        if (schData.municipalities) {
+          data.municipality = schData.municipalities.name || '';
+          if (schData.municipalities.provinces) {
+            data.province = schData.municipalities.provinces.name || '';
+          }
+        }
       }
-    }
-    delete data.schools;
+    } catch (ignored) {}
   }
-  if (data.school_groups) {
-    data.group = data.school_groups.name || '';
-    delete data.school_groups;
+
+  if (data.group_id) {
+    try {
+      const { data: grpData } = await db
+        .from('school_groups')
+        .select('name')
+        .eq('id', data.group_id)
+        .maybeSingle();
+
+      if (grpData) data.group = grpData.name || '';
+    } catch (ignored) {}
   }
+
   return data;
 }
 
 // ==================== ACTUALIZACIÓN DE DATOS ====================
 
-/**
- * Actualiza campos específicos del perfil del usuario.
- */
 export async function updateUser(userId, updateData) {
   log(`📝 Actualizando perfil del usuario: ${userId}`, 'INFO');
 
@@ -305,9 +327,6 @@ export async function updateUser(userId, updateData) {
 
 // ==================== GESTIÓN DE SESIONES ====================
 
-/**
- * Renueva el token de acceso utilizando un token de refresco válido.
- */
 export async function refreshSession(refreshToken) {
   log('🔄 Renovando sesión...');
   if (!refreshToken) throw new Error('Token de refresco obligatorio');
@@ -326,17 +345,11 @@ export async function refreshSession(refreshToken) {
   };
 }
 
-/**
- * Cierra la sesión activa.
- */
 export async function logout(userId) {
   log(`🔐 Logout registrado para: ${userId}`, 'INFO');
   return { success: true };
 }
 
-/**
- * Verifica si la contraseña es correcta (usado para cambios sensibles).
- */
 export async function verifyPassword(username, password) {
   log(`🔑 Verificando contraseña para: ${username}`, 'INFO');
   const email = `${username}@preusync.com`.toLowerCase();
@@ -349,12 +362,10 @@ export async function verifyPassword(username, password) {
   return { valid: true };
 }
 
-/**
- * Verifica si un nombre de usuario existe en la plataforma.
- */
 export async function checkUsernameExists(username) {
   log(`🔍 Verificando existencia de usuario: ${username}`);
-  const { data, error } = await supabase
+  const db = supabaseAdmin || supabase;
+  const { data, error } = await db
     .from('profiles')
     .select('username')
     .ilike('username', username)
@@ -369,9 +380,6 @@ export async function checkUsernameExists(username) {
 
 // ==================== ELIMINACIÓN DE CUENTA ====================
 
-/**
- * Elimina permanentemente la cuenta y el perfil del usuario.
- */
 export async function deleteAccount(userId, password) {
   log(`🗑️ Solicitud de eliminación de cuenta para: ${userId}`, 'WARN');
 
