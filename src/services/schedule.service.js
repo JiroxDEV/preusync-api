@@ -2,15 +2,15 @@
  * ============================================================================
  * Proyecto: PreuSync API
  * Archivo: schedule.service.js
- * Versión: v2.1.0
- * Descripción: Servicio de gestión de horarios. Implementa Multi-Tenancy
- *              para filtrar horarios por institución educativa.
+ * Versión: v2.2.0
+ * Descripción: Servicio de gestión de horarios escolares oficiales.
+ *              Soporta estructura de 8 turnos base, recesos, almuerzo y Multi-Tenancy.
  * Autor: JiroxDEV
  * Licensed under the GNU Affero General Public License v3
  * ============================================================================
  */
 
-import { supabase } from '../config/supabase.js';
+import { supabase, supabaseAdmin } from '../config/supabase.js';
 
 const log = (message, level = 'INFO', metadata = {}) => {
   const timestamp = new Date().toISOString();
@@ -33,24 +33,30 @@ export async function getSchedule(group, schoolId) {
     throw new Error('Grupo y Escuela obligatorios');
   }
 
-  const { data, error } = await supabase
+  const db = supabaseAdmin || supabase;
+
+  const { data, error } = await db
     .from('schedules')
     .select('*')
     .eq('group', group.trim())
-    .eq('school_id', schoolId);
+    .eq('school_id', schoolId)
+    .order('shift', { ascending: true });
 
   if (error) {
     logError(`❌ Fallo al obtener horario del grupo: ${group} en escuela: ${schoolId}`, error);
     throw new Error(`Error al recuperar horario: ${error.message}`);
   }
 
-  return data.map(row => ({
+  log(`📅 Recuperados ${data?.length || 0} registros de horario para grupo: ${group}`, 'INFO');
+
+  return (data || []).map(row => ({
     id: row.id,
     group: row.group,
     shift: row.shift,
+    timeRange: row.time_range || row.timeRange || '',
     day: row.day,
     subject: row.subject,
-    scheduleType: row.schedule_type,
+    scheduleType: row.schedule_type || row.scheduleType || 'Normal',
     schoolId: row.school_id
   }));
 }
@@ -60,30 +66,33 @@ export async function getSchedule(group, schoolId) {
  */
 export async function getGroupsBySchool(schoolId) {
   if (!schoolId) throw new Error('ID de escuela obligatorio');
+  const db = supabaseAdmin || supabase;
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('school_groups')
     .select('id, name')
     .eq('school_id', schoolId)
     .order('name');
 
   if (error) throw new Error(`Error al listar grupos: ${error.message}`);
-  return data;
+  return data || [];
 }
 
 /**
  * Obtiene la totalidad de los horarios registrados (Uso administrativo).
  */
 export async function getAllSchedules() {
-  const { data, error } = await supabase.from('schedules').select('*');
+  const db = supabaseAdmin || supabase;
+  const { data, error } = await db.from('schedules').select('*');
   if (error) throw new Error(`Fallo al recuperar todos los horarios: ${error.message}`);
-  return data.map(row => ({
+  return (data || []).map(row => ({
     id: row.id,
     group: row.group,
     shift: row.shift,
+    timeRange: row.time_range || row.timeRange || '',
     day: row.day,
     subject: row.subject,
-    scheduleType: row.schedule_type,
+    scheduleType: row.schedule_type || row.scheduleType || 'Normal',
     schoolId: row.school_id
   }));
 }
@@ -94,12 +103,14 @@ export async function getAllSchedules() {
  * Inserta o actualiza una entrada de horario (Atomic Upsert).
  */
 export async function upsertSchedule(scheduleData, adminId) {
-  const { group, shift, day, subject, scheduleType, schoolId } = scheduleData;
+  const { group, shift, timeRange, day, subject, scheduleType, schoolId } = scheduleData;
   if (!group || shift === undefined || !day || !subject || !schoolId) {
     throw new Error('Campos obligatorios faltantes para el horario');
   }
 
-  const existing = await supabase
+  const db = supabaseAdmin || supabase;
+
+  const existing = await db
     .from('schedules')
     .select('id')
     .eq('group', group)
@@ -111,6 +122,7 @@ export async function upsertSchedule(scheduleData, adminId) {
   const entry = {
     group,
     shift,
+    time_range: timeRange || '',
     day,
     subject,
     schedule_type: scheduleType || 'Normal',
@@ -119,7 +131,7 @@ export async function upsertSchedule(scheduleData, adminId) {
 
   let result;
   if (existing.data) {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('schedules')
       .update(entry)
       .eq('id', existing.data.id)
@@ -128,7 +140,7 @@ export async function upsertSchedule(scheduleData, adminId) {
     if (error) throw new Error('Fallo al actualizar entrada de horario');
     result = data;
   } else {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('schedules')
       .insert(entry)
       .select('id')
