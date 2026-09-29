@@ -82,7 +82,7 @@ app.get('/health', (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     name: 'PreuSync API',
-    version: '0.6.0',
+    version: '0.6.5',
     status: 'operational',
     documentation: 'https://github.com/JiroxDEV/PreuSync-backend'
   });
