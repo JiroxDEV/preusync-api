@@ -1,4 +1,6 @@
 release_date,version_name,details
+24/09/2026,v0.6.0,"feat: Lanzamiento de la API v0.6.0 con soporte para consulta de grupos por escuela, enriquecimiento de perfil y unificación de uniones de tablas.
+fix: Corrección de consultas RLS en GET /auth/me usando cliente administrativo y almacenamiento de metadatos completos en Supabase Auth."
 24/09/2026,v0.4.12,"fix: Corrección de inserción de perfil en Supabase eliminando columna inexistente 'group' de las inserciones en signUp.
 refactor: Alineación estricta de nombres de columnas (group_id, school_id) en consultas y actualizaciones de perfiles."
 20/09/2026,v0.4.11,"fix: Corregido endpoint de obtención de grupos usando schoolService y recepción de avatar.
