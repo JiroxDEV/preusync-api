@@ -2,9 +2,8 @@
  * ============================================================================
  * Proyecto: PreuSync API
  * Archivo: schedule.service.js
- * Versión: v2.2.0
- * Descripción: Servicio de gestión de horarios escolares oficiales.
- *              Soporta estructura de 8 turnos base, recesos, almuerzo y Multi-Tenancy.
+ * Versión: v2.3.0
+ * Descripción: Servicio de gestión de horarios escolares dinámicos unificados.
  * Autor: JiroxDEV
  * Licensed under the GNU Affero General Public License v3
  * ============================================================================
@@ -25,7 +24,7 @@ const logError = (message, error, metadata = {}) => {
 // ==================== CONSULTA DE HORARIOS ====================
 
 /**
- * Obtiene el horario completo de un grupo específico en una escuela.
+ * Obtiene el horario dinámico de un grupo específico en una escuela.
  */
 export async function getSchedule(group, schoolId) {
   if (!group || !group.trim() || !schoolId) {
@@ -56,7 +55,6 @@ export async function getSchedule(group, schoolId) {
     timeRange: row.time_range || row.timeRange || '',
     day: row.day,
     subject: row.subject,
-    scheduleType: row.schedule_type || row.scheduleType || 'Normal',
     schoolId: row.school_id
   }));
 }
@@ -92,7 +90,6 @@ export async function getAllSchedules() {
     timeRange: row.time_range || row.timeRange || '',
     day: row.day,
     subject: row.subject,
-    scheduleType: row.schedule_type || row.scheduleType || 'Normal',
     schoolId: row.school_id
   }));
 }
@@ -103,7 +100,7 @@ export async function getAllSchedules() {
  * Inserta o actualiza una entrada de horario (Atomic Upsert).
  */
 export async function upsertSchedule(scheduleData, adminId) {
-  const { group, shift, timeRange, day, subject, scheduleType, schoolId } = scheduleData;
+  const { group, shift, timeRange, day, subject, schoolId } = scheduleData;
   if (!group || shift === undefined || !day || !subject || !schoolId) {
     throw new Error('Campos obligatorios faltantes para el horario');
   }
@@ -125,7 +122,6 @@ export async function upsertSchedule(scheduleData, adminId) {
     time_range: timeRange || '',
     day,
     subject,
-    schedule_type: scheduleType || 'Normal',
     school_id: schoolId
   };
 
