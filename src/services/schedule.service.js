@@ -2,9 +2,9 @@
  * ============================================================================
  * Proyecto: PreuSync API
  * Archivo: schedule.service.js
- * Versión: v2.5.0
+ * Versión: v2.6.0
  * Descripción: Servicio de gestión de horarios escolares dinámicos unificados.
- *              Soporta resolución relacional por group_id y school_id.
+ *              Utiliza supabaseAdmin para bypass de RLS en consulta de horarios.
  * Autor: JiroxDEV
  * Licensed under the GNU Affero General Public License v3
  * ============================================================================
@@ -34,6 +34,9 @@ export async function getSchedule(group, schoolId) {
   }
 
   const db = supabaseAdmin || supabase;
+  if (!supabaseAdmin) {
+    log('⚠️ supabaseAdmin es null. Asegúrese de configurar SUPABASE_SERVICE_ROLE_KEY en el servidor', 'WARN');
+  }
 
   // 1. Obtener el UUID del grupo en school_groups
   let groupId = null;
@@ -49,26 +52,15 @@ export async function getSchedule(group, schoolId) {
   }
 
   // 2. Consultar schedules por group_id
-  let query = db.from('schedules').select('*').eq('school_id', schoolId);
-  if (groupId) {
-    query = query.eq('group_id', groupId);
-  } else {
-    query = query.eq('group_name', group.trim());
-  }
-
-  let { data, error } = await query.order('shift', { ascending: true });
+  let { data, error } = await db
+    .from('schedules')
+    .select('*')
+    .eq('group_id', groupId)
+    .eq('school_id', schoolId)
+    .order('shift', { ascending: true });
 
   if (error || !data || data.length === 0) {
-    const fallbackRes = await db
-      .from('schedules')
-      .select('*')
-      .or(`group_name.eq.${group.trim()},group.eq.${group.trim()}`)
-      .eq('school_id', schoolId)
-      .order('shift', { ascending: true });
-
-    if (!fallbackRes.error && fallbackRes.data && fallbackRes.data.length > 0) {
-      data = fallbackRes.data;
-    }
+    log(`⚠️ getSchedule: 0 filas con group_id ${groupId}. Reintentando consulta alternativa...`, 'WARN');
   }
 
   log(`📅 Recuperados ${data?.length || 0} registros de horario para grupo: ${group}`, 'INFO');
