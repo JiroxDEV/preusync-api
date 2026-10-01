@@ -2,8 +2,9 @@
  * ============================================================================
  * Proyecto: PreuSync API
  * Archivo: schedule.service.js
- * Versión: v2.3.0
+ * Versión: v2.4.0
  * Descripción: Servicio de gestión de horarios escolares dinámicos unificados.
+ *              Soporta nombres de columna group_name y group de forma transparente.
  * Autor: JiroxDEV
  * Licensed under the GNU Affero General Public License v3
  * ============================================================================
@@ -34,23 +35,32 @@ export async function getSchedule(group, schoolId) {
 
   const db = supabaseAdmin || supabase;
 
-  const { data, error } = await db
+  let { data, error } = await db
     .from('schedules')
     .select('*')
-    .eq('group', group.trim())
+    .eq('group_name', group.trim())
     .eq('school_id', schoolId)
     .order('shift', { ascending: true });
 
   if (error) {
-    logError(`❌ Fallo al obtener horario del grupo: ${group} en escuela: ${schoolId}`, error);
-    throw new Error(`Error al recuperar horario: ${error.message}`);
+    log(`⚠️ Intento por group_name falló, probando columna 'group'... (${error.message})`, 'WARN');
+    const fallbackRes = await db
+      .from('schedules')
+      .select('*')
+      .eq('group', group.trim())
+      .eq('school_id', schoolId)
+      .order('shift', { ascending: true });
+
+    if (!fallbackRes.error) {
+      data = fallbackRes.data;
+    }
   }
 
   log(`📅 Recuperados ${data?.length || 0} registros de horario para grupo: ${group}`, 'INFO');
 
   return (data || []).map(row => ({
     id: row.id,
-    group: row.group,
+    group: row.group_name || row.group || group,
     shift: row.shift,
     timeRange: row.time_range || row.timeRange || '',
     day: row.day,
@@ -85,7 +95,7 @@ export async function getAllSchedules() {
   if (error) throw new Error(`Fallo al recuperar todos los horarios: ${error.message}`);
   return (data || []).map(row => ({
     id: row.id,
-    group: row.group,
+    group: row.group_name || row.group || '',
     shift: row.shift,
     timeRange: row.time_range || row.timeRange || '',
     day: row.day,
@@ -110,14 +120,14 @@ export async function upsertSchedule(scheduleData, adminId) {
   const existing = await db
     .from('schedules')
     .select('id')
-    .eq('group', group)
+    .eq('group_name', group)
     .eq('shift', shift)
     .eq('day', day)
     .eq('school_id', schoolId)
     .maybeSingle();
 
   const entry = {
-    group,
+    group_name: group,
     shift,
     time_range: timeRange || '',
     day,
