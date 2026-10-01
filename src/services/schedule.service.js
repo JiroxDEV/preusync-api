@@ -2,9 +2,9 @@
  * ============================================================================
  * Proyecto: PreuSync API
  * Archivo: schedule.service.js
- * Versión: v2.4.0
+ * Versión: v2.5.0
  * Descripción: Servicio de gestión de horarios escolares dinámicos unificados.
- *              Soporta nombres de columna group_name y group de forma transparente.
+ *              Soporta resolución relacional por group_id y school_id.
  * Autor: JiroxDEV
  * Licensed under the GNU Affero General Public License v3
  * ============================================================================
@@ -35,23 +35,38 @@ export async function getSchedule(group, schoolId) {
 
   const db = supabaseAdmin || supabase;
 
-  let { data, error } = await db
-    .from('schedules')
-    .select('*')
-    .eq('group_name', group.trim())
+  // 1. Obtener el UUID del grupo en school_groups
+  let groupId = null;
+  const { data: groupRow } = await db
+    .from('school_groups')
+    .select('id')
+    .eq('name', group.trim())
     .eq('school_id', schoolId)
-    .order('shift', { ascending: true });
+    .maybeSingle();
 
-  if (error) {
-    log(`⚠️ Intento por group_name falló, probando columna 'group'... (${error.message})`, 'WARN');
+  if (groupRow) {
+    groupId = groupRow.id;
+  }
+
+  // 2. Consultar schedules por group_id
+  let query = db.from('schedules').select('*').eq('school_id', schoolId);
+  if (groupId) {
+    query = query.eq('group_id', groupId);
+  } else {
+    query = query.eq('group_name', group.trim());
+  }
+
+  let { data, error } = await query.order('shift', { ascending: true });
+
+  if (error || !data || data.length === 0) {
     const fallbackRes = await db
       .from('schedules')
       .select('*')
-      .eq('group', group.trim())
+      .or(`group_name.eq.${group.trim()},group.eq.${group.trim()}`)
       .eq('school_id', schoolId)
       .order('shift', { ascending: true });
 
-    if (!fallbackRes.error) {
+    if (!fallbackRes.error && fallbackRes.data && fallbackRes.data.length > 0) {
       data = fallbackRes.data;
     }
   }
@@ -60,7 +75,7 @@ export async function getSchedule(group, schoolId) {
 
   return (data || []).map(row => ({
     id: row.id,
-    group: row.group_name || row.group || group,
+    group: group.trim(),
     shift: row.shift,
     timeRange: row.time_range || row.timeRange || '',
     day: row.day,
@@ -117,17 +132,18 @@ export async function upsertSchedule(scheduleData, adminId) {
 
   const db = supabaseAdmin || supabase;
 
-  const existing = await db
-    .from('schedules')
+  let groupId = null;
+  const { data: groupRow } = await db
+    .from('school_groups')
     .select('id')
-    .eq('group_name', group)
-    .eq('shift', shift)
-    .eq('day', day)
+    .eq('name', group.trim())
     .eq('school_id', schoolId)
     .maybeSingle();
 
+  if (groupRow) groupId = groupRow.id;
+
   const entry = {
-    group_name: group,
+    group_id: groupId,
     shift,
     time_range: timeRange || '',
     day,
@@ -136,6 +152,15 @@ export async function upsertSchedule(scheduleData, adminId) {
   };
 
   let result;
+  const existing = await db
+    .from('schedules')
+    .select('id')
+    .eq('group_id', groupId)
+    .eq('shift', shift)
+    .eq('day', day)
+    .eq('school_id', schoolId)
+    .maybeSingle();
+
   if (existing.data) {
     const { data, error } = await db
       .from('schedules')
