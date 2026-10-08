@@ -193,6 +193,16 @@ router.get('/auth/exists/:username', async (req, res) => {
   catch (error) { res.status(500).json({ success: false, error: error.message }); }
 });
 
+router.get('/users/by-username/:username', authenticate, async (req, res) => {
+  try { const data = await authService.getUserByUsername(req.params.username); res.json({ success: true, data }); }
+  catch (error) { res.status(404).json({ success: false, error: error.message }); }
+});
+
+router.put('/users/:id/role', authenticate, async (req, res) => {
+  try { const data = await authService.updateUser(req.params.id, req.body); res.json({ success: true, data }); }
+  catch (error) { res.status(400).json({ success: false, error: error.message }); }
+});
+
 // --- POSTS ---
 router.get('/posts/top', optionalAuthenticate, async (req, res) => {
   try {
@@ -235,6 +245,32 @@ router.get('/news/range', async (req, res) => {
 router.get('/events/school', async (req, res) => {
   try { const data = await eventService.getEventsRange('school', req.query.start, req.query.count, req.query.schoolId); res.json({ success: true, data }); }
   catch (error) { res.status(500).json({ success: false, error: error.message }); }
+});
+
+router.get('/events/external', async (req, res) => {
+  try { const data = await eventService.getEventsRange('external', req.query.start, req.query.count); res.json({ success: true, data }); }
+  catch (error) { res.status(500).json({ success: false, error: error.message }); }
+});
+
+router.post('/events', authenticate, async (req, res) => {
+  try { const data = await eventService.addEvent(req.body, req.user.id); res.status(201).json({ success: true, data }); }
+  catch (error) { res.status(400).json({ success: false, error: error.message }); }
+});
+
+// --- EPHEMERIS ---
+router.get('/ephemeris', async (req, res) => {
+  try { const data = await ephemerisService.getEphemeridesByDate(req.query.date, req.query.year); res.json({ success: true, data }); }
+  catch (error) { res.status(400).json({ success: false, error: error.message }); }
+});
+
+router.post('/ephemeris', authenticate, async (req, res) => {
+  try { const data = await ephemerisService.addEphemeris(req.body, req.user.id); res.status(201).json({ success: true, data }); }
+  catch (error) { res.status(400).json({ success: false, error: error.message }); }
+});
+
+router.delete('/ephemeris/:id', authenticate, async (req, res) => {
+  try { const data = await ephemerisService.deleteEphemeris(req.params.id, req.user.id); res.json({ success: true, data }); }
+  catch (error) { res.status(400).json({ success: false, error: error.message }); }
 });
 
 // --- SCHEDULE ---
