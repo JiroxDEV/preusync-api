@@ -2,18 +2,17 @@
  * ============================================================================
  * Proyecto: PreuSync API
  * Archivo: news.service.js
- * Versión: v1.0.0
- * Descripción: Servicio para la gestión de noticias. Maneja la creación,
- *              edición, recuperación por rangos y subida de imágenes.
+ * Versión: v1.1.0
+ * Descripción: Servicio para la gestión de noticias. Maneja creación, edición
+ *              y consultas de noticias por orden de fecha.
  * Autor: JiroxDEV
  * Licensed under the GNU Affero General Public License v3
  * ============================================================================
  */
 
-import { supabase } from '../config/supabase.js';
+import { supabase, supabaseAdmin } from '../config/supabase.js';
 import { uploadImage } from '../utils/storage.js';
 
-// Logger interno para el servicio de noticias.
 const log = (message, level = 'INFO', metadata = {}) => {
   const timestamp = new Date().toISOString();
   const metaStr = Object.keys(metadata).length ? ` | ${JSON.stringify(metadata)}` : '';
@@ -28,19 +27,18 @@ const logError = (message, error, metadata = {}) => {
 
 /**
  * Crea una nueva noticia en la base de datos.
- * @param {Object} newsData Datos de la noticia (encabezado, detalles, etc).
- * @param {string} userId ID del usuario que crea la noticia (staff/admin).
  */
 export async function addNews(newsData, userId) {
-  const required = ['headline', 'details', 'source', 'url'];
+  const required = ['headline', 'details', 'source'];
   for (const field of required) {
     if (!newsData[field] || !newsData[field].trim()) {
       throw new Error(`Campo obligatorio faltante: ${field}`);
     }
   }
 
+  const db = supabaseAdmin || supabase;
   let imageUrl = '';
-  // Si se incluye una imagen en base64, se sube al almacenamiento.
+
   if (newsData.imageBase64 && newsData.imageBase64.trim()) {
     try {
       const filePath = `news/${userId}/${Date.now()}.jpg`;
@@ -55,11 +53,10 @@ export async function addNews(newsData, userId) {
     details: newsData.details.trim(),
     image_url: imageUrl,
     source: newsData.source.trim(),
-    url: newsData.url.trim(),
-    importance: parseInt(newsData.importance) || 0
+    url: newsData.url ? newsData.url.trim() : 'https://preusync.com'
   };
 
-  const { data, error } = await supabase.from('news').insert(news).select('id').single();
+  const { data, error } = await db.from('news').insert(news).select('id').single();
   if (error) {
     logError(`❌ Error al crear noticia por el usuario: ${userId}`, error);
     throw new Error(`Fallo al añadir noticia: ${error.message}`);
@@ -75,7 +72,8 @@ export async function addNews(newsData, userId) {
  * Actualiza los datos de una noticia existente.
  */
 export async function editNews(newsId, userId, updateData) {
-  const { data: news, error: fetchError } = await supabase
+  const db = supabaseAdmin || supabase;
+  const { data: news, error: fetchError } = await db
     .from('news')
     .select('id')
     .eq('id', newsId)
@@ -83,7 +81,7 @@ export async function editNews(newsId, userId, updateData) {
 
   if (fetchError) throw new Error('Noticia no encontrada');
 
-  const { error } = await supabase
+  const { error } = await db
     .from('news')
     .update(updateData)
     .eq('id', newsId);
@@ -93,24 +91,24 @@ export async function editNews(newsId, userId, updateData) {
 }
 
 /**
- * Obtiene las noticias más importantes (mayor relevancia).
+ * Obtiene las noticias destacadas ordenadas por fecha de creación.
  */
 export async function getTopNews(limit = 5) {
-  const { data, error } = await supabase
+  const db = supabaseAdmin || supabase;
+  const { data, error } = await db
     .from('news')
     .select('*')
-    .order('importance', { ascending: false })
+    .order('created_at', { ascending: false })
     .limit(limit);
 
   if (error) throw new Error(`Fallo al obtener noticias: ${error.message}`);
-  return data.map(row => ({
+  return (data || []).map(row => ({
     id: row.id,
-    headline: row.headline,
-    details: row.details,
-    imageUrl: row.image_url,
-    source: row.source,
-    url: row.url,
-    importance: row.importance,
+    headline: row.headline || '',
+    details: row.details || '',
+    imageUrl: row.image_url || '',
+    source: row.source || 'PreuSync',
+    url: row.url || '',
     createdAt: row.created_at
   }));
 }
@@ -119,21 +117,21 @@ export async function getTopNews(limit = 5) {
  * Recupera un rango de noticias ordenadas por fecha (para paginación).
  */
 export async function getNewsRange(start = 0, count = 10) {
-  const { data, error } = await supabase
+  const db = supabaseAdmin || supabase;
+  const { data, error } = await db
     .from('news')
     .select('*')
     .order('created_at', { ascending: false })
     .range(start, start + count - 1);
 
   if (error) throw new Error(`Fallo al obtener noticias: ${error.message}`);
-  return data.map(row => ({
+  return (data || []).map(row => ({
     id: row.id,
-    headline: row.headline,
-    details: row.details,
-    imageUrl: row.image_url,
-    source: row.source,
-    url: row.url,
-    importance: row.importance,
+    headline: row.headline || '',
+    details: row.details || '',
+    imageUrl: row.image_url || '',
+    source: row.source || 'PreuSync',
+    url: row.url || '',
     createdAt: row.created_at
   }));
 }
@@ -142,7 +140,8 @@ export async function getNewsRange(start = 0, count = 10) {
  * Obtiene la información detallada de una noticia específica.
  */
 export async function getNewsById(newsId) {
-  const { data, error } = await supabase
+  const db = supabaseAdmin || supabase;
+  const { data, error } = await db
     .from('news')
     .select('*')
     .eq('id', newsId)
@@ -151,14 +150,11 @@ export async function getNewsById(newsId) {
   if (error) throw new Error('Noticia no encontrada');
   return {
     id: data.id,
-    headline: data.headline,
-    details: data.details,
-    imageUrl: data.image_url,
-    source: data.source,
-    url: data.url,
-    importance: data.importance,
+    headline: data.headline || '',
+    details: data.details || '',
+    imageUrl: data.image_url || '',
+    source: data.source || 'PreuSync',
+    url: data.url || '',
     createdAt: data.created_at
   };
 }
-
-
