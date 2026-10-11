@@ -2,9 +2,8 @@
  * ============================================================================
  * Proyecto: PreuSync API
  * Archivo: telemetry.service.js
- * Versión: v2.0.0
- * Descripción: Servicio de telemetría y monitoreo de ancho de banda REAL.
- *              Reinicia automáticamente sus contadores el día 1 de cada mes (00:00 UTC).
+ * Versión: v2.1.0
+ * Descripción: Servicio de telemetría y monitoreo REAL de ancho de banda y despliegues.
  * Autor: JiroxDEV
  * Licensed under the GNU Affero General Public License v3
  * ============================================================================
@@ -17,6 +16,7 @@ let memoryBytes = 0;
 let memoryRequests = 0;
 let activeUsersSet = new Set();
 let lastFlushTime = Date.now();
+let serverDeployTracked = false;
 
 function getCurrentPeriod() {
   const now = new Date();
@@ -45,13 +45,17 @@ export function telemetryMiddleware(req, res, next) {
     activeUsersSet.add(req.user.id);
   }
 
+  // Si es la primera petición tras un despliegue en Render, registrar el tiempo de construcción
+  if (!serverDeployTracked) {
+    serverDeployTracked = true;
+    trackServerDeployment();
+  }
+
   res.on('finish', () => {
-    // Medición exacta de bytes en la respuesta HTTP
     const contentLength = parseInt(res.get('Content-Length')) || 0;
-    memoryBytes += contentLength + 250; // 250 bytes de cabeceras HTTP reales
+    memoryBytes += contentLength + 250;
     memoryRequests += 1;
 
-    // Sincronizar en DB cada 30 segundos o cada 25 peticiones
     if (Date.now() - lastFlushTime > 30000 || memoryRequests >= 25) {
       flushTelemetryToDb();
     }
@@ -61,7 +65,29 @@ export function telemetryMiddleware(req, res, next) {
 }
 
 /**
- * Guarda los contadores acumulados de memoria en Supabase DB de forma atómica
+ * Registra cada despliegue en Render estimando 1.8 min por compilación
+ */
+async function trackServerDeployment() {
+  const db = supabaseAdmin || supabase;
+  const period = getCurrentPeriod();
+  try {
+    const { data: existing } = await db
+      .from('system_telemetry')
+      .select('*')
+      .eq('period', period)
+      .maybeSingle();
+
+    if (existing) {
+      const newBuilds = (existing.build_count || 0) + 1;
+      await db.from('system_telemetry').update({ build_count: newBuilds }).eq('id', existing.id);
+    } else {
+      await db.from('system_telemetry').insert({ period, build_count: 1 });
+    }
+  } catch (e) {}
+}
+
+/**
+ * Guarda los contadores acumulados de memoria en Supabase DB
  */
 export async function flushTelemetryToDb() {
   if (memoryRequests === 0 && memoryBytes === 0) return;
@@ -129,7 +155,8 @@ export async function getTelemetryData() {
       period,
       total_requests: 0,
       total_egress_bytes: 0,
-      mau_count: 1
+      mau_count: 1,
+      build_count: 1
     };
   }
 
@@ -140,9 +167,8 @@ export async function getTelemetryData() {
     const { data: postsCount } = await db.from('posts').select('*', { count: 'exact', head: true });
     const { data: schedCount } = await db.from('schedules').select('*', { count: 'exact', head: true });
 
-    // Cálculo estimado de peso en disco por registro
     const totalRecords = (profilesCount || 0) + (postsCount || 0) + (schedCount || 0);
-    realDbBytes = 1500000 + (totalRecords * 1024); // 1.5MB base + 1KB por registro
+    realDbBytes = 1500000 + (totalRecords * 1024);
   } catch (e) {}
 
   // 3. Medir el tamaño REAL de los archivos subidos
@@ -176,6 +202,12 @@ export async function getTelemetryData() {
   const mauMax = 50000;
   const mauPercentage = Math.min(100, (mauCount / mauMax) * 100);
 
+  // Minutos de compilación acumulados en Render (1.8 min por despliegue registrado)
+  const buildCount = telemetryRow.build_count || 1;
+  const buildMinutes = parseFloat((buildCount * 1.8).toFixed(1));
+  const buildMaxMinutes = 500;
+  const buildPercentage = Math.min(100, (buildMinutes / buildMaxMinutes) * 100);
+
   const daysUntilReset = getDaysUntilReset();
   const nextResetDate = getNextResetDate();
 
@@ -197,7 +229,7 @@ export async function getTelemetryData() {
     storageFormatted: storageMb < 1000 ? `${storageMb.toFixed(2)} MB / 1.00 GB` : `${storageGb.toFixed(2)} GB / 1.00 GB`,
     storagePercentage: parseFloat(storagePercentage.toFixed(2)),
     renderBandwidthFormatted: egressMb < 1000 ? `${egressMb.toFixed(2)} MB / 5.00 GB` : `${egressGb.toFixed(2)} GB / 5.00 GB`,
-    renderBuildMinutesFormatted: '14 / 500 min',
-    renderBuildMinutesPercentage: 2.8
+    renderBuildMinutesFormatted: `${buildMinutes} / 500 min (${buildCount} despliegues)`,
+    renderBuildMinutesPercentage: parseFloat(buildPercentage.toFixed(2))
   };
 }
