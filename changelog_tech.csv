@@ -1,4 +1,6 @@
 release_date,version_name,details
+01/10/2026,v0.7.1,"feat: Lanzamiento de API v0.7.1 con motor de telemetria en tiempo real, medicion Egress HTTP, seguimiento de despliegues y reinicio mensual el dia 1.
+fix: Resolucion relacional por group_id en horarios, eliminacion de columna obsoleta dislikes en addPost y bypass unificado de RLS via supabaseAdmin."
 24/09/2026,v0.6.0,"feat: Lanzamiento de la API v0.6.0 con soporte para consulta de grupos por escuela, enriquecimiento de perfil y unificación de uniones de tablas.
 fix: Corrección de consultas RLS en GET /auth/me usando cliente administrativo y almacenamiento de metadatos completos en Supabase Auth."
 24/09/2026,v0.4.12,"fix: Corrección de inserción de perfil en Supabase eliminando columna inexistente 'group' de las inserciones en signUp.
