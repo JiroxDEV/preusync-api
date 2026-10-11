@@ -19,6 +19,7 @@ import * as scheduleService from '../services/schedule.service.js';
 import * as ephemerisService from '../services/ephemeris.service.js';
 import * as reportsService from '../services/reports.service.js';
 import * as schoolService from '../services/school.service.js';
+import * as telemetryService from '../services/telemetry.service.js';
 import { authenticate, optionalAuthenticate } from '../middleware/auth.js';
 import { supabase, supabaseAdmin } from '../config/supabase.js';
 
@@ -35,6 +36,14 @@ const logError = (message, error, metadata = {}) => {
 };
 
 router.get('/ping', (req, res) => res.json({ message: 'pong' }));
+
+// --- TELEMETRÍA Y MONITOREO REAL ---
+router.get('/admin/telemetry', async (req, res) => {
+  try {
+    const data = await telemetryService.getTelemetryData();
+    res.json({ success: true, data });
+  } catch (error) { res.status(500).json({ success: false, error: error.message }); }
+});
 
 // --- VERSIONES ---
 router.get('/version/latest', optionalAuthenticate, async (req, res) => {

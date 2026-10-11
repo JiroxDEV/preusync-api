@@ -19,6 +19,7 @@ import morgan from 'morgan';
 import dns from 'node:dns';
 import apiRoutes from './src/routes/api.js';
 import { testSupabaseConnection, diagnoseTables, testDnsResolution, supabase } from './src/config/supabase.js';
+import { telemetryMiddleware } from './src/services/telemetry.service.js';
 
 // Optimización DNS para entornos de despliegue (como Render) evitando errores ENOTFOUND.
 dns.setDefaultResultOrder('ipv4first');
@@ -54,6 +55,9 @@ app.use(morgan(isProduction ? 'combined' : 'dev'));
 
 // Límite de payload aumentado para soportar subida de imágenes en base64.
 app.use(express.json({ limit: '10mb' }));
+
+// Middleware de Telemetría y Monitoreo Real de Ancho de Banda
+app.use(telemetryMiddleware);
 
 // ============================================================================
 // 2. SISTEMA DE LOGS CENTRALIZADO
