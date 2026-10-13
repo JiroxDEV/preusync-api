@@ -2,15 +2,15 @@
  * ============================================================================
  * Proyecto: PreuSync API
  * Archivo: school.service.js
- * Versión: v2.1.0
+ * Versión: v3.0.0
  * Descripción: Servicio de gestión de instituciones y ubicaciones geográficas.
- *              Soporta filtrado por disponibilidad (is_available).
+ *              Vinculado al nodo especializado dbEdu (DB 1).
  * Autor: JiroxDEV
  * Licensed under the GNU Affero General Public License v3
  * ============================================================================
  */
 
-import { supabase } from '../config/supabase.js';
+import { dbEdu } from '../config/supabase.js';
 
 const log = (message, level = 'INFO') => {
   const timestamp = new Date().toISOString();
@@ -23,7 +23,7 @@ const log = (message, level = 'INFO') => {
 export async function getProvinces() {
   log('Consultando provincias disponibles');
 
-  const { data, error } = await supabase
+  const { data, error } = await dbEdu
     .from('provinces')
     .select('*')
     .eq('is_available', true)
@@ -38,7 +38,7 @@ export async function getProvinces() {
  */
 export async function getMunicipalities(provinceId) {
   log(`Consultando municipios para la provincia: ${provinceId}`);
-  const { data, error } = await supabase
+  const { data, error } = await dbEdu
     .from('municipalities')
     .select('*')
     .eq('province_id', provinceId)
@@ -46,7 +46,7 @@ export async function getMunicipalities(provinceId) {
     .order('name', { ascending: true });
 
   if (error) throw error;
-  return data;
+  return data || [];
 }
 
 /**
@@ -54,7 +54,7 @@ export async function getMunicipalities(provinceId) {
  */
 export async function getSchools(municipalityId) {
   log(`Consultando escuelas para el municipio: ${municipalityId}`);
-  const { data, error } = await supabase
+  const { data, error } = await dbEdu
     .from('schools')
     .select('*')
     .eq('municipality_id', municipalityId)
@@ -62,7 +62,7 @@ export async function getSchools(municipalityId) {
     .order('name', { ascending: true });
 
   if (error) throw error;
-  return data;
+  return data || [];
 }
 
 /**
@@ -70,7 +70,7 @@ export async function getSchools(municipalityId) {
  */
 export async function getGroups(schoolId) {
   log(`Consultando grupos para la escuela: ${schoolId}`);
-  const { data, error } = await supabase
+  const { data, error } = await dbEdu
     .from('school_groups')
     .select('*')
     .eq('school_id', schoolId)
@@ -78,7 +78,7 @@ export async function getGroups(schoolId) {
     .order('name', { ascending: true });
 
   if (error) throw error;
-  return data;
+  return data || [];
 }
 
 /**
@@ -86,20 +86,20 @@ export async function getGroups(schoolId) {
  */
 export async function getResponsibilities() {
   log('Consultando catálogo de responsabilidades');
-  const { data, error } = await supabase
+  const { data, error } = await dbEdu
     .from('responsibilities')
     .select('*')
     .order('name', { ascending: true });
 
   if (error) throw error;
-  return data;
+  return data || [];
 }
 
 /**
  * Recupera la información de una escuela específica por su ID.
  */
 export async function getSchoolById(schoolId) {
-  const { data, error } = await supabase
+  const { data, error } = await dbEdu
     .from('schools')
     .select('*, municipalities(name, provinces(name))')
     .eq('id', schoolId)

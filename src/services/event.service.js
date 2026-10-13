@@ -2,18 +2,17 @@
  * ============================================================================
  * Proyecto: PreuSync API
  * Archivo: event.service.js
- * Versión: v1.0.0
+ * Versión: v2.0.0
  * Descripción: Servicio de gestión de eventos (escolares y externos).
- *              Controla el registro de actividades, su ubicación y persistencia.
+ *              Vinculado al nodo especializado dbNews (DB 5).
  * Autor: JiroxDEV
  * Licensed under the GNU Affero General Public License v3
  * ============================================================================
  */
 
-import { supabase } from '../config/supabase.js';
+import { dbNews } from '../config/supabase.js';
 import { uploadImage } from '../utils/storage.js';
 
-// Logger para el seguimiento de eventos programados.
 const log = (message, level = 'INFO', metadata = {}) => {
   const timestamp = new Date().toISOString();
   const metaStr = Object.keys(metadata).length ? ` | ${JSON.stringify(metadata)}` : '';
@@ -28,8 +27,6 @@ const logError = (message, error, metadata = {}) => {
 
 /**
  * Registra un nuevo evento en la base de datos.
- * @param {Object} eventData Datos del evento (título, detalles, fecha, hora, lugar).
- * @param {string} userId ID del staff que organiza el evento.
  */
 export async function addEvent(eventData, userId) {
   const required = ['title', 'details', 'date', 'time', 'location'];
@@ -39,11 +36,9 @@ export async function addEvent(eventData, userId) {
     }
   }
 
-  // Clasificación del evento (por defecto 'school').
   const eventType = eventData.eventType === 'external' ? 'external' : 'school';
   let imageUrl = '';
 
-  // Procesado de imagen si se adjunta póster o foto del evento.
   if (eventData.imageBase64 && eventData.imageBase64.trim()) {
     try {
       const filePath = `events/${userId}/${Date.now()}.jpg`;
@@ -60,10 +55,11 @@ export async function addEvent(eventData, userId) {
     date: eventData.date.trim(),
     time: eventData.time.trim(),
     location: eventData.location.trim(),
-    event_type: eventType
+    event_type: eventType,
+    school_id: eventData.schoolId || null
   };
 
-  const { data, error } = await supabase.from('events').insert(event).select('id').single();
+  const { data, error } = await dbNews.from('events').insert(event).select('id').single();
   if (error) {
     logError(`❌ Error al crear evento por el usuario: ${userId}`, error);
     throw new Error(`Fallo al añadir el evento: ${error.message}`);
@@ -75,11 +71,8 @@ export async function addEvent(eventData, userId) {
 
 // ==================== EDICIÓN Y BORRADO ====================
 
-/**
- * Modifica los datos de un evento existente.
- */
 export async function editEvent(eventId, userId, updateData) {
-  const { data: event, error: fetchError } = await supabase
+  const { data: event, error: fetchError } = await dbNews
     .from('events')
     .select('id')
     .eq('id', eventId)
@@ -87,7 +80,7 @@ export async function editEvent(eventId, userId, updateData) {
 
   if (fetchError) throw new Error('Evento no encontrado');
 
-  const { error } = await supabase
+  const { error } = await dbNews
     .from('events')
     .update(updateData)
     .eq('id', eventId);
@@ -96,41 +89,34 @@ export async function editEvent(eventId, userId, updateData) {
   return { success: true };
 }
 
-/**
- * Elimina definitivamente un evento.
- */
 export async function deleteEvent(eventId, userId) {
-  const { error } = await supabase.from('events').delete().eq('id', eventId);
+  const { error } = await dbNews.from('events').delete().eq('id', eventId);
   if (error) throw new Error('Fallo al eliminar el evento');
   return { success: true };
 }
 
 // ==================== CONSULTAS ====================
 
-/**
- * Obtiene un rango de eventos filtrados por tipo y escuela para el listado cronológico.
- */
 export async function getEventsRange(eventType = 'school', start = 0, count = 10, schoolId = null) {
   if (!['school', 'external'].includes(eventType)) {
     throw new Error('Tipo de evento inválido');
   }
 
-  let query = supabase
+  let query = dbNews
     .from('events')
     .select('*')
     .eq('event_type', eventType)
-    .order('date', { ascending: true }) // Ordenamos por fecha más cercana.
+    .order('created_at', { ascending: false })
     .range(start, start + count - 1);
 
-  // Filtramos por el ID de la escuela si se proporciona (Multi-Tenancy).
-  if (schoolId) {
+  if (schoolId && eventType === 'school') {
     query = query.eq('school_id', schoolId);
   }
 
   const { data, error } = await query;
 
   if (error) throw new Error(`Fallo al recuperar eventos: ${error.message}`);
-  return data.map(row => ({
+  return (data || []).map(row => ({
     id: row.id,
     title: row.title,
     details: row.details,
@@ -143,11 +129,8 @@ export async function getEventsRange(eventType = 'school', start = 0, count = 10
   }));
 }
 
-/**
- * Recupera la información completa de un evento por su identificador.
- */
 export async function getEventById(eventId) {
-  const { data, error } = await supabase
+  const { data, error } = await dbNews
     .from('events')
     .select('*')
     .eq('id', eventId)
@@ -166,5 +149,3 @@ export async function getEventById(eventId) {
     createdAt: data.created_at
   };
 }
-
-

@@ -2,15 +2,15 @@
  * ============================================================================
  * Proyecto: PreuSync API
  * Archivo: schedule.service.js
- * Versión: v2.6.0
+ * Versión: v3.0.0
  * Descripción: Servicio de gestión de horarios escolares dinámicos unificados.
- *              Utiliza supabaseAdmin para bypass de RLS en consulta de horarios.
+ *              Vinculado al nodo especializado dbEdu (DB 1).
  * Autor: JiroxDEV
  * Licensed under the GNU Affero General Public License v3
  * ============================================================================
  */
 
-import { supabase, supabaseAdmin } from '../config/supabase.js';
+import { dbEdu } from '../config/supabase.js';
 
 const log = (message, level = 'INFO', metadata = {}) => {
   const timestamp = new Date().toISOString();
@@ -33,14 +33,9 @@ export async function getSchedule(group, schoolId) {
     throw new Error('Grupo y Escuela obligatorios');
   }
 
-  const db = supabaseAdmin || supabase;
-  if (!supabaseAdmin) {
-    log('⚠️ supabaseAdmin es null. Asegúrese de configurar SUPABASE_SERVICE_ROLE_KEY en el servidor', 'WARN');
-  }
-
   // 1. Obtener el UUID del grupo en school_groups
   let groupId = null;
-  const { data: groupRow } = await db
+  const { data: groupRow } = await dbEdu
     .from('school_groups')
     .select('id')
     .eq('name', group.trim())
@@ -52,7 +47,7 @@ export async function getSchedule(group, schoolId) {
   }
 
   // 2. Consultar schedules por group_id
-  let { data, error } = await db
+  let { data, error } = await dbEdu
     .from('schedules')
     .select('*')
     .eq('group_id', groupId)
@@ -60,7 +55,16 @@ export async function getSchedule(group, schoolId) {
     .order('shift', { ascending: true });
 
   if (error || !data || data.length === 0) {
-    log(`⚠️ getSchedule: 0 filas con group_id ${groupId}. Reintentando consulta alternativa...`, 'WARN');
+    const fallbackRes = await dbEdu
+      .from('schedules')
+      .select('*')
+      .or(`group_name.eq.${group.trim()},group.eq.${group.trim()}`)
+      .eq('school_id', schoolId)
+      .order('shift', { ascending: true });
+
+    if (!fallbackRes.error && fallbackRes.data && fallbackRes.data.length > 0) {
+      data = fallbackRes.data;
+    }
   }
 
   log(`📅 Recuperados ${data?.length || 0} registros de horario para grupo: ${group}`, 'INFO');
@@ -81,9 +85,8 @@ export async function getSchedule(group, schoolId) {
  */
 export async function getGroupsBySchool(schoolId) {
   if (!schoolId) throw new Error('ID de escuela obligatorio');
-  const db = supabaseAdmin || supabase;
 
-  const { data, error } = await db
+  const { data, error } = await dbEdu
     .from('school_groups')
     .select('id, name')
     .eq('school_id', schoolId)
@@ -97,8 +100,7 @@ export async function getGroupsBySchool(schoolId) {
  * Obtiene la totalidad de los horarios registrados (Uso administrativo).
  */
 export async function getAllSchedules() {
-  const db = supabaseAdmin || supabase;
-  const { data, error } = await db.from('schedules').select('*');
+  const { data, error } = await dbEdu.from('schedules').select('*');
   if (error) throw new Error(`Fallo al recuperar todos los horarios: ${error.message}`);
   return (data || []).map(row => ({
     id: row.id,
@@ -122,10 +124,8 @@ export async function upsertSchedule(scheduleData, adminId) {
     throw new Error('Campos obligatorios faltantes para el horario');
   }
 
-  const db = supabaseAdmin || supabase;
-
   let groupId = null;
-  const { data: groupRow } = await db
+  const { data: groupRow } = await dbEdu
     .from('school_groups')
     .select('id')
     .eq('name', group.trim())
@@ -144,7 +144,7 @@ export async function upsertSchedule(scheduleData, adminId) {
   };
 
   let result;
-  const existing = await db
+  const existing = await dbEdu
     .from('schedules')
     .select('id')
     .eq('group_id', groupId)
@@ -154,7 +154,7 @@ export async function upsertSchedule(scheduleData, adminId) {
     .maybeSingle();
 
   if (existing.data) {
-    const { data, error } = await db
+    const { data, error } = await dbEdu
       .from('schedules')
       .update(entry)
       .eq('id', existing.data.id)
@@ -163,7 +163,7 @@ export async function upsertSchedule(scheduleData, adminId) {
     if (error) throw new Error('Fallo al actualizar entrada de horario');
     result = data;
   } else {
-    const { data, error } = await db
+    const { data, error } = await dbEdu
       .from('schedules')
       .insert(entry)
       .select('id')

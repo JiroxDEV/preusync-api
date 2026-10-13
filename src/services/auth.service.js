@@ -2,17 +2,16 @@
  * ============================================================================
  * Proyecto: PreuSync API
  * Archivo: auth.service.js
- * Versión: v1.5.0
- * Descripción: Servicio de autenticación y gestión de usuarios. Utiliza cliente
- *              admin/service_role para bypass de RLS en lectura/escritura de perfiles.
+ * Versión: v2.0.0
+ * Descripción: Servicio de autenticación y gestión de usuarios.
+ *              Vinculado al nodo especializado dbAuth (DB 3).
  * Autor: JiroxDEV
  * Licensed under the GNU Affero General Public License v3
  * ============================================================================
  */
 
-import { supabase, supabaseAdmin } from '../config/supabase.js';
+import { supabase, dbAuth } from '../config/supabase.js';
 
-// Logger de autenticación
 const log = (message, level = 'INFO', metadata = {}) => {
   const timestamp = new Date().toISOString();
   const metaStr = Object.keys(metadata).length ? ` | ${JSON.stringify(metadata)}` : '';
@@ -30,10 +29,8 @@ const logError = (message, error, metadata = {}) => {
  */
 export async function signUp(username, password, userData) {
   log(`🔐 Iniciando proceso de registro para: ${username}`);
-  const db = supabaseAdmin || supabase;
 
-  // Validación de unicidad de nombre de usuario
-  const { data: existingUser } = await db
+  const { data: existingUser } = await dbAuth
     .from('profiles')
     .select('username')
     .ilike('username', username)
@@ -41,7 +38,7 @@ export async function signUp(username, password, userData) {
   if (existingUser) throw new Error('El nombre de usuario ya está en uso');
 
   if (userData.idCard) {
-    const { data: existingId } = await db
+    const { data: existingId } = await dbAuth
       .from('profiles')
       .select('id_card')
       .eq('id_card', userData.idCard)
@@ -89,11 +86,6 @@ export async function signUp(username, password, userData) {
     authData = signUpData;
   }
 
-  if (!supabaseAdmin) {
-    log('❌ supabaseAdmin no disponible. Verifique SUPABASE_SERVICE_ROLE_KEY', 'ERROR');
-    throw new Error('Error de configuración en el servidor');
-  }
-
   const profile = {
     id: authData.user.id,
     username: username.trim(),
@@ -112,7 +104,7 @@ export async function signUp(username, password, userData) {
 
   log(`💾 Insertando/Restaurando perfil para ${username}`, 'INFO', { profile });
 
-  const { error: insertError } = await supabaseAdmin.from('profiles').upsert(profile);
+  const { error: insertError } = await dbAuth.from('profiles').upsert(profile);
   if (insertError) {
     logError(`❌ Error al crear perfil para el usuario: ${authData.user.id}`, insertError);
     throw new Error(`Fallo en la creación del perfil: ${insertError.message}`);
@@ -134,7 +126,6 @@ export async function signUp(username, password, userData) {
  */
 export async function login(username, password) {
   log(`🔐 Intento de inicio de sesión: ${username}`);
-  const db = supabaseAdmin || supabase;
   const email = `${username}@preusync.com`.toLowerCase();
 
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
@@ -143,7 +134,7 @@ export async function login(username, password) {
     throw new Error('Credenciales inválidas');
   }
 
-  let { data: profile } = await db
+  let { data: profile } = await dbAuth
     .from('profiles')
     .select('*')
     .ilike('username', username)
@@ -171,50 +162,13 @@ export async function login(username, password) {
       responsibilities: meta.responsibilities || ''
     };
 
-    if (supabaseAdmin) {
-      await supabaseAdmin.from('profiles').upsert(fallbackProfile);
-      profile = fallbackProfile;
-    } else {
-      throw new Error('Usuario no encontrado');
-    }
+    await dbAuth.from('profiles').upsert(fallbackProfile);
+    profile = fallbackProfile;
   }
 
   if (profile.status === 'banned') {
     log(`⛔ Usuario ${username} está baneado`, 'WARN');
     throw new Error('Esta cuenta ha sido suspendida');
-  }
-
-  // Enriquecimiento de escuela y ubicación
-  if (profile.school_id) {
-    try {
-      const { data: schData } = await db
-        .from('schools')
-        .select('name, municipalities(name, provinces(name))')
-        .eq('id', profile.school_id)
-        .maybeSingle();
-
-      if (schData) {
-        profile.school = schData.name || '';
-        if (schData.municipalities) {
-          profile.municipality = schData.municipalities.name || '';
-          if (schData.municipalities.provinces) {
-            profile.province = schData.municipalities.provinces.name || '';
-          }
-        }
-      }
-    } catch (ignored) {}
-  }
-
-  if (profile.group_id) {
-    try {
-      const { data: grpData } = await db
-        .from('school_groups')
-        .select('name')
-        .eq('id', profile.group_id)
-        .maybeSingle();
-
-      if (grpData) profile.group = grpData.name || '';
-    } catch (ignored) {}
   }
 
   log(`✅ Usuario ${username} ha iniciado sesión exitosamente (ID: ${data.user.id})`, 'INFO');
@@ -230,9 +184,8 @@ export async function login(username, password) {
 
 export async function getUserByUsername(username) {
   log(`👤 Obteniendo perfil público: ${username}`, 'INFO');
-  const db = supabaseAdmin || supabase;
 
-  const { data, error } = await db
+  const { data, error } = await dbAuth
     .from('profiles')
     .select('*')
     .ilike('username', username)
@@ -243,38 +196,6 @@ export async function getUserByUsername(username) {
     throw new Error('Usuario no encontrado');
   }
 
-  if (data.school_id) {
-    try {
-      const { data: schData } = await db
-        .from('schools')
-        .select('name, municipalities(name, provinces(name))')
-        .eq('id', data.school_id)
-        .maybeSingle();
-
-      if (schData) {
-        data.school = schData.name || '';
-        if (schData.municipalities) {
-          data.municipality = schData.municipalities.name || '';
-          if (schData.municipalities.provinces) {
-            data.province = schData.municipalities.provinces.name || '';
-          }
-        }
-      }
-    } catch (ignored) {}
-  }
-
-  if (data.group_id) {
-    try {
-      const { data: grpData } = await db
-        .from('school_groups')
-        .select('name')
-        .eq('id', data.group_id)
-        .maybeSingle();
-
-      if (grpData) data.group = grpData.name || '';
-    } catch (ignored) {}
-  }
-
   return data;
 }
 
@@ -283,9 +204,7 @@ export async function getUserByUsername(username) {
 export async function updateUser(userId, updateData) {
   log(`📝 Actualizando perfil del usuario: ${userId}`, 'INFO');
 
-  if (!supabaseAdmin) throw new Error('Service role key no configurada');
-
-  const { data: existing, error: fetchError } = await supabaseAdmin
+  const { data: existing, error: fetchError } = await dbAuth
     .from('profiles')
     .select('*')
     .eq('id', userId)
@@ -298,7 +217,7 @@ export async function updateUser(userId, updateData) {
   allowedFields.forEach(f => { if (updateData[f] !== undefined) updated[f] = updateData[f]; });
 
   if (updateData.username && updateData.username !== existing.username) {
-    const { data: conflict } = await supabaseAdmin
+    const { data: conflict } = await dbAuth
       .from('profiles')
       .select('id')
       .ilike('username', updateData.username)
@@ -311,7 +230,7 @@ export async function updateUser(userId, updateData) {
     updated.full_name = (updated.first_name || '') + ' ' + (updated.last_name || '');
   }
 
-  const { error } = await supabaseAdmin
+  const { error } = await dbAuth
     .from('profiles')
     .update(updated)
     .eq('id', userId);
@@ -364,8 +283,7 @@ export async function verifyPassword(username, password) {
 
 export async function checkUsernameExists(username) {
   log(`🔍 Verificando existencia de usuario: ${username}`);
-  const db = supabaseAdmin || supabase;
-  const { data, error } = await db
+  const { data, error } = await dbAuth
     .from('profiles')
     .select('username')
     .ilike('username', username)
@@ -383,7 +301,7 @@ export async function checkUsernameExists(username) {
 export async function deleteAccount(userId, password) {
   log(`🗑️ Solicitud de eliminación de cuenta para: ${userId}`, 'WARN');
 
-  const { data: profile, error: fetchError } = await supabaseAdmin
+  const { data: profile, error: fetchError } = await dbAuth
     .from('profiles')
     .select('username')
     .eq('id', userId)
@@ -394,7 +312,7 @@ export async function deleteAccount(userId, password) {
   const { valid } = await verifyPassword(profile.username, password);
   if (!valid) throw new Error('Contraseña incorrecta');
 
-  const { error: delProfile } = await supabaseAdmin
+  const { error: delProfile } = await dbAuth
     .from('profiles')
     .delete()
     .eq('id', userId);
@@ -402,14 +320,6 @@ export async function deleteAccount(userId, password) {
   if (delProfile) {
     logError(`❌ Error al eliminar perfil: ${userId}`, delProfile);
     throw new Error('Fallo al eliminar datos del perfil');
-  }
-
-  if (supabaseAdmin) {
-    try {
-      await supabaseAdmin.auth.admin.deleteUser(userId);
-    } catch (err) {
-      logError(`⚠️ No se pudo eliminar el usuario de autenticación ${userId}`, err);
-    }
   }
 
   log(`✅ Cuenta eliminada exitosamente para: ${userId}`, 'INFO');

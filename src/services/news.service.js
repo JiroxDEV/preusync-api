@@ -2,15 +2,15 @@
  * ============================================================================
  * Proyecto: PreuSync API
  * Archivo: news.service.js
- * Versión: v1.1.0
- * Descripción: Servicio para la gestión de noticias. Maneja creación, edición
- *              y consultas de noticias por orden de fecha.
+ * Versión: v2.0.0
+ * Descripción: Servicio para la gestión de noticias.
+ *              Vinculado al nodo especializado dbNews (DB 5).
  * Autor: JiroxDEV
  * Licensed under the GNU Affero General Public License v3
  * ============================================================================
  */
 
-import { supabase, supabaseAdmin } from '../config/supabase.js';
+import { dbNews } from '../config/supabase.js';
 import { uploadImage } from '../utils/storage.js';
 
 const log = (message, level = 'INFO', metadata = {}) => {
@@ -36,7 +36,6 @@ export async function addNews(newsData, userId) {
     }
   }
 
-  const db = supabaseAdmin || supabase;
   let imageUrl = '';
 
   if (newsData.imageBase64 && newsData.imageBase64.trim()) {
@@ -56,7 +55,7 @@ export async function addNews(newsData, userId) {
     url: newsData.url ? newsData.url.trim() : 'https://preusync.com'
   };
 
-  const { data, error } = await db.from('news').insert(news).select('id').single();
+  const { data, error } = await dbNews.from('news').insert(news).select('id').single();
   if (error) {
     logError(`❌ Error al crear noticia por el usuario: ${userId}`, error);
     throw new Error(`Fallo al añadir noticia: ${error.message}`);
@@ -68,12 +67,8 @@ export async function addNews(newsData, userId) {
 
 // ==================== EDICIÓN Y CONSULTA ====================
 
-/**
- * Actualiza los datos de una noticia existente.
- */
 export async function editNews(newsId, userId, updateData) {
-  const db = supabaseAdmin || supabase;
-  const { data: news, error: fetchError } = await db
+  const { data: news, error: fetchError } = await dbNews
     .from('news')
     .select('id')
     .eq('id', newsId)
@@ -81,7 +76,7 @@ export async function editNews(newsId, userId, updateData) {
 
   if (fetchError) throw new Error('Noticia no encontrada');
 
-  const { error } = await db
+  const { error } = await dbNews
     .from('news')
     .update(updateData)
     .eq('id', newsId);
@@ -90,12 +85,8 @@ export async function editNews(newsId, userId, updateData) {
   return { success: true };
 }
 
-/**
- * Obtiene las noticias destacadas ordenadas por fecha de creación.
- */
 export async function getTopNews(limit = 5) {
-  const db = supabaseAdmin || supabase;
-  const { data, error } = await db
+  const { data, error } = await dbNews
     .from('news')
     .select('*')
     .order('created_at', { ascending: false })
@@ -113,12 +104,8 @@ export async function getTopNews(limit = 5) {
   }));
 }
 
-/**
- * Recupera un rango de noticias ordenadas por fecha (para paginación).
- */
 export async function getNewsRange(start = 0, count = 10) {
-  const db = supabaseAdmin || supabase;
-  const { data, error } = await db
+  const { data, error } = await dbNews
     .from('news')
     .select('*')
     .order('created_at', { ascending: false })
@@ -136,12 +123,8 @@ export async function getNewsRange(start = 0, count = 10) {
   }));
 }
 
-/**
- * Obtiene la información detallada de una noticia específica.
- */
 export async function getNewsById(newsId) {
-  const db = supabaseAdmin || supabase;
-  const { data, error } = await db
+  const { data, error } = await dbNews
     .from('news')
     .select('*')
     .eq('id', newsId)

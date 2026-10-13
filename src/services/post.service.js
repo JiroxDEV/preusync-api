@@ -2,15 +2,15 @@
  * ============================================================================
  * Proyecto: PreuSync API
  * Archivo: post.service.js
- * Versión: v1.1.0
- * Descripción: Servicio de gestión de publicaciones (posts). Maneja creación,
- *              edición, borrado, reportes y consultas resilientes a RLS.
+ * Versión: v2.0.0
+ * Descripción: Servicio de gestión de publicaciones (posts).
+ *              Vinculado al nodo especializado dbCommunity (DB 2).
  * Autor: JiroxDEV
  * Licensed under the GNU Affero General Public License v3
  * ============================================================================
  */
 
-import { supabase, supabaseAdmin } from '../config/supabase.js';
+import { dbCommunity } from '../config/supabase.js';
 import { uploadImage } from '../utils/storage.js';
 
 const log = (message, level = 'INFO', metadata = {}) => {
@@ -33,7 +33,6 @@ export async function addPost(postData, userId) {
     throw new Error('El título y los detalles son campos obligatorios');
   }
 
-  const db = supabaseAdmin || supabase;
   let imageUrl = '';
 
   if (postData.imageBase64 && postData.imageBase64.trim()) {
@@ -54,7 +53,7 @@ export async function addPost(postData, userId) {
 
   log(`💾 Creando nuevo post para usuario: ${userId}`);
 
-  const { data, error } = await db.from('posts').insert(post).select('id').single();
+  const { data, error } = await dbCommunity.from('posts').insert(post).select('id').single();
   if (error) {
     logError(`❌ Error al crear post para el usuario: ${userId}`, error);
     throw new Error(`Fallo al publicar: ${error.message}`);
@@ -68,8 +67,7 @@ export async function addPost(postData, userId) {
  * Modifica el contenido de un post existente si el usuario es el autor.
  */
 export async function editPost(postId, userId, updateData) {
-  const db = supabaseAdmin || supabase;
-  const { data: post, error: fetchError } = await db
+  const { data: post, error: fetchError } = await dbCommunity
     .from('posts')
     .select('author_id')
     .eq('id', postId)
@@ -78,7 +76,7 @@ export async function editPost(postId, userId, updateData) {
   if (fetchError) throw new Error('Publicación no encontrada');
   if (post.author_id !== userId) throw new Error('Acción no autorizada');
 
-  const { error } = await db
+  const { error } = await dbCommunity
     .from('posts')
     .update(updateData)
     .eq('id', postId);
@@ -93,17 +91,14 @@ export async function editPost(postId, userId, updateData) {
  * Obtiene publicaciones destacadas ordenadas por fecha o score.
  */
 export async function getTopPosts(limit = 5, userId = null) {
-  const db = supabaseAdmin || supabase;
-
-  let { data, error } = await db
+  let { data, error } = await dbCommunity
     .from('posts')
     .select('*, profiles(username, avatar_url)')
     .order('created_at', { ascending: false })
     .limit(limit);
 
   if (error) {
-    log(`⚠️ getTopPosts uniones explícitas fallaron, intentando select llano... (${error.message})`, 'WARN');
-    const plain = await db.from('posts').select('*').order('created_at', { ascending: false }).limit(limit);
+    const plain = await dbCommunity.from('posts').select('*').order('created_at', { ascending: false }).limit(limit);
     if (plain.error) throw new Error(`Error al obtener posts top: ${plain.error.message}`);
     data = plain.data;
   }
@@ -129,17 +124,14 @@ export async function getTopPosts(limit = 5, userId = null) {
  * Recupera un rango de publicaciones ordenadas por fecha de creación.
  */
 export async function getPostsRange(start = 0, count = 10, userId = null) {
-  const db = supabaseAdmin || supabase;
-
-  let { data, error } = await db
+  let { data, error } = await dbCommunity
     .from('posts')
     .select('*, profiles(username, avatar_url)')
     .order('created_at', { ascending: false })
     .range(start, start + count - 1);
 
   if (error) {
-    log(`⚠️ getPostsRange uniones explícitas fallaron, intentando consulta plana... (${error.message})`, 'WARN');
-    const plain = await db.from('posts').select('*').order('created_at', { ascending: false }).range(start, start + count - 1);
+    const plain = await dbCommunity.from('posts').select('*').order('created_at', { ascending: false }).range(start, start + count - 1);
     if (plain.error) throw new Error(`Error al obtener rango de posts: ${plain.error.message}`);
     data = plain.data;
   }
@@ -166,9 +158,8 @@ export async function getPostsRange(start = 0, count = 10, userId = null) {
  */
 export async function getPostsByAuthor(authorId, start = 0, count = 10) {
   if (!authorId) throw new Error('Se requiere el ID del autor');
-  const db = supabaseAdmin || supabase;
 
-  let { data, error } = await db
+  let { data, error } = await dbCommunity
     .from('posts')
     .select('*, profiles(username, avatar_url)')
     .eq('author_id', authorId)
@@ -176,7 +167,7 @@ export async function getPostsByAuthor(authorId, start = 0, count = 10) {
     .range(start, start + count - 1);
 
   if (error) {
-    const plain = await db.from('posts').select('*').eq('author_id', authorId).order('created_at', { ascending: false }).range(start, start + count - 1);
+    const plain = await dbCommunity.from('posts').select('*').eq('author_id', authorId).order('created_at', { ascending: false }).range(start, start + count - 1);
     if (plain.error) throw new Error(`Fallo al consultar publicaciones personales: ${plain.error.message}`);
     data = plain.data;
   }
@@ -204,9 +195,8 @@ export async function getPostsByAuthor(authorId, start = 0, count = 10) {
  */
 export async function getUserStats(userId) {
   if (!userId) throw new Error('ID de usuario obligatorio');
-  const db = supabaseAdmin || supabase;
 
-  const { count: postCount, error: postError } = await db
+  const { count: postCount, error: postError } = await dbCommunity
     .from('posts')
     .select('*', { count: 'exact', head: true })
     .eq('author_id', userId);
@@ -216,7 +206,7 @@ export async function getUserStats(userId) {
     return { postCount: 0, totalLikes: 0, totalDislikes: 0 };
   }
 
-  const { data: sums, error: sumsError } = await db
+  const { data: sums } = await dbCommunity
     .from('posts')
     .select('likes')
     .eq('author_id', userId);
@@ -237,8 +227,7 @@ export async function getUserStats(userId) {
  * Elimina una publicación. Requiere comprobación de autoría.
  */
 export async function deletePost(postId, userId) {
-  const db = supabaseAdmin || supabase;
-  const { data: post, error: fetchError } = await db
+  const { data: post, error: fetchError } = await dbCommunity
     .from('posts')
     .select('author_id')
     .eq('id', postId)
@@ -247,7 +236,7 @@ export async function deletePost(postId, userId) {
   if (fetchError) throw new Error('Publicación inexistente');
   if (post.author_id !== userId) throw new Error('Borrador no autorizado');
 
-  const { error } = await db.from('posts').delete().eq('id', postId);
+  const { error } = await dbCommunity.from('posts').delete().eq('id', postId);
   if (error) throw new Error('Fallo al eliminar de la DB');
   return { success: true };
 }
@@ -256,8 +245,7 @@ export async function deletePost(postId, userId) {
  * Registra una denuncia sobre un post.
  */
 export async function reportPost(postId, userId, reason = '') {
-  const db = supabaseAdmin || supabase;
-  const { data: post, error: fetchError } = await db
+  const { data: post, error: fetchError } = await dbCommunity
     .from('posts')
     .select('id')
     .eq('id', postId)
@@ -265,7 +253,7 @@ export async function reportPost(postId, userId, reason = '') {
 
   if (fetchError) throw new Error('Post no encontrado');
 
-  const { error } = await db
+  const { error } = await dbCommunity
     .from('reports')
     .insert({
       post_id: postId,
@@ -281,8 +269,7 @@ export async function reportPost(postId, userId, reason = '') {
  * Obtiene un post individual por su ID único.
  */
 export async function getPostById(postId) {
-  const db = supabaseAdmin || supabase;
-  const { data, error } = await db
+  const { data, error } = await dbCommunity
     .from('posts')
     .select('*, profiles(username, avatar_url)')
     .eq('id', postId)
