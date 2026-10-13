@@ -2,9 +2,9 @@
  * ============================================================================
  * Proyecto: PreuSync API
  * Archivo: server.js
- * Versión: v1.1.0
- * Descripción: Punto de entrada principal del servidor Express. Configura
- *              middlewares, rutas, diagnósticos de inicio y tareas programadas.
+ * Versión: v1.3.0
+ * Descripción: Punto de entrada del servidor Express. Implementa Ping Cruzado
+ *              entre Nodos Render para mantener el cluster activo 24/7.
  * Autor: JiroxDEV
  * Licensed under the GNU Affero General Public License v3
  * ============================================================================
@@ -25,7 +25,6 @@ import { telemetryMiddleware } from './src/services/telemetry.service.js';
 dns.setDefaultResultOrder('ipv4first');
 dns.setServers(['8.8.8.8', '1.1.1.1']);
 
-// Inicialización de variables de entorno (.env).
 dotenv.config();
 
 const app = express();
@@ -42,7 +41,6 @@ app.use(helmet({
 
 app.use(compression());
 
-// Configuración de CORS permisiva para facilitar la comunicación con la App Android.
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -50,13 +48,8 @@ app.use(cors({
   credentials: true
 }));
 
-// Logger de peticiones HTTP.
 app.use(morgan(isProduction ? 'combined' : 'dev'));
-
-// Límite de payload aumentado para soportar subida de imágenes en base64.
 app.use(express.json({ limit: '10mb' }));
-
-// Middleware de Telemetría y Monitoreo Real de Ancho de Banda
 app.use(telemetryMiddleware);
 
 // ============================================================================
@@ -72,9 +65,7 @@ const log = (message, level = 'INFO') => {
 // 3. DEFINICIÓN DE RUTAS
 // ============================================================================
 
-// Endpoint de monitoreo para servicios de Keep-Alive (UptimeRobot, etc).
 app.get('/health', (req, res) => {
-  log('Solicitud de comprobación de salud recibida', 'INFO');
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -85,14 +76,13 @@ app.get('/health', (req, res) => {
 
 app.get('/', (req, res) => {
   res.json({
-    name: 'PreuSync API',
+    name: 'PreuSync API Cluster',
     version: '0.7.1',
     status: 'operational',
     documentation: 'https://github.com/JiroxDEV/PreuSync-backend'
   });
 });
 
-// Rutas principales de la API.
 app.use('/api', apiRoutes);
 
 // ============================================================================
@@ -117,14 +107,36 @@ app.use((err, req, res, next) => {
 });
 
 // ============================================================================
-// 5. INICIALIZACIÓN DEL SERVIDOR
+// 5. INICIALIZACIÓN Y PING CRUZADO MULTI-NODO
 // ============================================================================
+
+function startCrossNodePing() {
+  const nodeUrls = (process.env.NODE_URLS || '').split(',').map(u => u.trim()).filter(Boolean);
+  if (nodeUrls.length <= 1) return;
+
+  log(`📡 Activando sistema de Ping Cruzado entre ${nodeUrls.length} Nodos Render...`, 'INFO');
+
+  const TEN_MINUTES = 10 * 60 * 1000;
+  setInterval(async () => {
+    log('🔄 Ejecutando Ping Cruzado a Nodos Hermanos de Render...', 'INFO');
+    for (const targetUrl of nodeUrls) {
+      try {
+        const pingUrl = `${targetUrl.replace(/\/$/, '')}/health`;
+        const res = await fetch(pingUrl, { signal: AbortSignal.timeout(5000) });
+        if (res.ok) {
+          log(`✅ Nodo Hermano Activo: ${targetUrl}`, 'INFO');
+        }
+      } catch (err) {
+        log(`⚠️ No se pudo contactar nodo ${targetUrl}: ${err.message}`, 'WARN');
+      }
+    }
+  }, TEN_MINUTES);
+}
 
 app.listen(PORT, async () => {
   log(`🚀 Servidor ejecutándose en http://localhost:${PORT}`, 'INFO');
   log(`📦 Entorno: ${process.env.NODE_ENV || 'development'}`, 'INFO');
 
-  // Autodiagnóstico al iniciar para asegurar conectividad con la base de datos.
   try {
     await testDnsResolution();
     const connection = await testSupabaseConnection();
@@ -138,21 +150,9 @@ app.listen(PORT, async () => {
   }
 
   log(`🔑 Supabase URL: ${process.env.SUPABASE_URL ? '✓ Configurada' : '✗ Faltante'}`, 'INFO');
-  log(`🔑 Supabase Service Role: ${process.env.SUPABASE_SERVICE_ROLE_KEY ? '✓ Configurada' : '✗ Faltante (Funciones admin limitadas)'}`, 'INFO');
+  log(`🔑 Supabase Service Role: ${process.env.SUPABASE_SERVICE_ROLE_KEY ? '✓ Configurada' : '✗ Faltante'}`, 'INFO');
 
-  // ==================== TAREA DE SUPERVIVENCIA (Keep-Alive) ====================
-  // Realiza una consulta mínima cada 6 horas para evitar la pausa automática de Supabase.
-  const SIX_HOURS = 6 * 60 * 60 * 1000;
-  setInterval(async () => {
-    try {
-      log('📡 Ejecutando consulta de supervivencia (Keep-Alive)...', 'INFO');
-      const { error } = await supabase.from('app_versions').select('version_code').limit(1);
-      if (error) throw error;
-      log('✅ Keep-Alive exitoso: Supabase sigue activo', 'INFO');
-    } catch (error) {
-      log(`⚠️ Falló el Keep-Alive: ${error.message}`, 'WARN');
-    }
-  }, SIX_HOURS);
+  startCrossNodePing();
 });
 
 // ============================================================================
