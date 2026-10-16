@@ -250,6 +250,11 @@ router.get('/news/range', async (req, res) => {
   catch (error) { res.status(500).json({ success: false, error: error.message }); }
 });
 
+router.post('/news', authenticate, async (req, res) => {
+  try { const data = await newsService.addNews(req.body, req.user.id); res.status(201).json({ success: true, data }); }
+  catch (error) { res.status(400).json({ success: false, error: error.message }); }
+});
+
 // --- EVENTS ---
 router.get('/events/school', async (req, res) => {
   try { const data = await eventService.getEventsRange('school', req.query.start, req.query.count, req.query.schoolId); res.json({ success: true, data }); }
