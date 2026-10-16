@@ -2,9 +2,9 @@
  * ============================================================================
  * Proyecto: PreuSync API
  * Archivo: auth.service.js
- * Versión: v2.0.0
- * Descripción: Servicio de autenticación y gestión de usuarios.
- *              Vinculado al nodo especializado dbAuth (DB 3).
+ * Versión: v2.1.0
+ * Descripción: Servicio de autenticación. Diferencia explícitamente los errores
+ *              AUTH_USER_NOT_FOUND y AUTH_INVALID_PASSWORD.
  * Autor: JiroxDEV
  * Licensed under the GNU Affero General Public License v3
  * ============================================================================
@@ -122,22 +122,36 @@ export async function signUp(username, password, userData) {
 // ==================== INICIO DE SESIÓN (LOGIN) ====================
 
 /**
- * Autentica al usuario y retorna tokens de acceso y renovación.
+ * Autentica al usuario diferenciando AUTH_USER_NOT_FOUND y AUTH_INVALID_PASSWORD.
  */
 export async function login(username, password) {
   log(`🔐 Intento de inicio de sesión: ${username}`);
-  const email = `${username}@preusync.com`.toLowerCase();
 
+  // 1. Verificación previa de existencia de la cuenta en profiles
+  const { data: userExists } = await dbAuth
+    .from('profiles')
+    .select('id')
+    .ilike('username', username.trim())
+    .maybeSingle();
+
+  if (!userExists) {
+    log(`⚠️ Intento de login con usuario inexistente: ${username}`, 'WARN');
+    throw new Error('AUTH_USER_NOT_FOUND');
+  }
+
+  // 2. Validación de contraseña con Supabase Auth
+  const email = `${username.trim()}@preusync.com`.toLowerCase();
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
   if (error) {
-    logError(`❌ Fallo en el login para ${username}`, error);
-    throw new Error('Credenciales inválidas');
+    logError(`❌ Contraseña incorrecta para usuario: ${username}`, error);
+    throw new Error('AUTH_INVALID_PASSWORD');
   }
 
   let { data: profile } = await dbAuth
     .from('profiles')
     .select('*')
-    .ilike('username', username)
+    .ilike('username', username.trim())
     .maybeSingle();
 
   if (!profile) {
