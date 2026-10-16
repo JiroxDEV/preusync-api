@@ -21,7 +21,7 @@ import * as reportsService from '../services/reports.service.js';
 import * as schoolService from '../services/school.service.js';
 import * as telemetryService from '../services/telemetry.service.js';
 import { authenticate, optionalAuthenticate } from '../middleware/auth.js';
-import { supabase, supabaseAdmin } from '../config/supabase.js';
+import { supabase, supabaseAdmin, dbEdu, dbCommunity, dbAuth, dbEphemeris, dbNews } from '../config/supabase.js';
 
 const router = express.Router();
 
@@ -91,7 +91,7 @@ router.post('/auth/logout', authenticate, async (req, res) => {
 router.get('/auth/me', authenticate, async (req, res) => {
   try {
     log(`🔍 GET /auth/me para req.user.id: ${req.user.id}`, 'INFO');
-    const db = supabaseAdmin || supabase;
+    const db = dbAuth || supabaseAdmin || supabase;
 
     let { data, error } = await db
       .from('profiles')
@@ -116,8 +116,8 @@ router.get('/auth/me', authenticate, async (req, res) => {
 
       if (fallbackQuery.data) {
         data = fallbackQuery.data;
-        if (supabaseAdmin && data.id !== req.user.id) {
-          await supabaseAdmin.from('profiles').update({ id: req.user.id }).eq('id', data.id);
+        if (data.id !== req.user.id) {
+          await db.from('profiles').update({ id: req.user.id }).eq('id', data.id);
         }
       }
     }
@@ -127,10 +127,10 @@ router.get('/auth/me', authenticate, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Perfil no encontrado' });
     }
 
-    // Enriquecimiento de escuela, municipio y provincia
+    // Enriquecimiento de escuela, municipio y provincia desde dbEdu (DB 1)
     if (data.school_id) {
       try {
-        const { data: schoolData } = await db
+        const { data: schoolData } = await dbEdu
           .from('schools')
           .select('name, municipalities(name, provinces(name))')
           .eq('id', data.school_id)
@@ -150,10 +150,10 @@ router.get('/auth/me', authenticate, async (req, res) => {
       }
     }
 
-    // Enriquecimiento del grupo escolar
+    // Enriquecimiento del grupo escolar desde dbEdu (DB 1)
     if (data.group_id) {
       try {
-        const { data: groupData } = await db
+        const { data: groupData } = await dbEdu
           .from('school_groups')
           .select('name')
           .eq('id', data.group_id)
