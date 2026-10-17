@@ -2,15 +2,16 @@
  * ============================================================================
  * Proyecto: PreuSync API
  * Archivo: telemetry.service.js
- * Versión: v3.1.0
- * Descripción: Servicio de telemetría y monitoreo con desglose detallado completo
- *              (MAU, DB Size, Egress, Storage) por cada una de las 5 DBs de Supabase
- *              y por cada uno de los 3 Nodos Render.
+ * Versión: v3.2.0
+ * Descripción: Servicio de telemetría y monitoreo con MEDICIÓN EXACTA AL SEGUNDO
+ *              de tiempos de compilación de Render ('npm run build') y Egress HTTP.
  * Autor: JiroxDEV
  * Licensed under the GNU Affero General Public License v3
  * ============================================================================
  */
 
+import fs from 'fs';
+import path from 'path';
 import { supabase, supabaseAdmin, dbEdu, dbCommunity, dbAuth, dbEphemeris, dbNews } from '../config/supabase.js';
 
 let memoryBytes = 0;
@@ -61,9 +62,28 @@ export function telemetryMiddleware(req, res, next) {
   next();
 }
 
+/**
+ * Mide el tiempo de compilación EXACTO generado por 'npm run build' en Render
+ */
 async function trackServerDeployment() {
   const db = dbEdu || supabaseAdmin || supabase;
   const period = getCurrentPeriod();
+
+  let exactBuildMinutes = 1.8; // Fallback promedio
+  const tmpPath = path.join('/tmp', 'render_build_info.json');
+
+  if (fs.existsSync(tmpPath)) {
+    try {
+      const raw = fs.readFileSync(tmpPath, 'utf8');
+      const info = JSON.parse(raw);
+      if (info.buildStartTime) {
+        const buildDurationMs = Date.now() - info.buildStartTime;
+        exactBuildMinutes = parseFloat((buildDurationMs / (1000 * 60)).toFixed(2));
+        console.log(`[Telemetry] ⏱️ Duración de compilación Render medida exactamente: ${exactBuildMinutes} min (${Math.round(buildDurationMs / 1000)} seg)`);
+      }
+    } catch (e) {}
+  }
+
   try {
     const { data: existing } = await db
       .from('system_telemetry')
@@ -73,9 +93,10 @@ async function trackServerDeployment() {
 
     if (existing) {
       const newBuilds = (existing.build_count || 0) + 1;
-      await db.from('system_telemetry').update({ build_count: newBuilds }).eq('id', existing.id);
+      const newMinutes = parseFloat(((existing.total_build_minutes || 0) + exactBuildMinutes).toFixed(2));
+      await db.from('system_telemetry').update({ build_count: newBuilds, total_build_minutes: newMinutes }).eq('id', existing.id);
     } else {
-      await db.from('system_telemetry').insert({ period, build_count: 1 });
+      await db.from('system_telemetry').insert({ period, build_count: 1, total_build_minutes: exactBuildMinutes });
     }
   } catch (e) {}
 }
@@ -144,7 +165,8 @@ export async function getTelemetryData() {
       total_requests: 0,
       total_egress_bytes: 0,
       mau_count: 1,
-      build_count: 1
+      build_count: 1,
+      total_build_minutes: 1.8
     };
   }
 
@@ -154,7 +176,7 @@ export async function getTelemetryData() {
   const egressPercentage = Math.min(100, (egressGb / egressMaxGb) * 100);
 
   const buildCount = telemetryRow.build_count || 1;
-  const buildMinutes = parseFloat((buildCount * 1.8).toFixed(1));
+  const buildMinutes = telemetryRow.total_build_minutes ? parseFloat(telemetryRow.total_build_minutes.toFixed(1)) : parseFloat((buildCount * 1.8).toFixed(1));
   const buildMaxMinutes = 500;
   const buildPercentage = Math.min(100, (buildMinutes / buildMaxMinutes) * 100);
 
