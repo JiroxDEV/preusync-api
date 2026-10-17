@@ -76,10 +76,11 @@ app.get('/health', (req, res) => {
 
 app.get('/', (req, res) => {
   res.json({
-    name: 'PreuSync API Cluster',
+    name: 'PreuSync™ API Cluster',
     version: '0.7.1',
     status: 'operational',
-    documentation: 'https://github.com/JiroxDEV/PreuSync-backend'
+    copyright: '© 2026 Daniel Alejandro Pupo González (JiroxDEV). PreuSync™ es un proyecto de BinaryQva™.',
+    documentation: 'https://github.com/JiroxDEV/preusync-api'
   });
 });
 
