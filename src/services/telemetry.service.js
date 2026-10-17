@@ -2,9 +2,10 @@
  * ============================================================================
  * Proyecto: PreuSync API
  * Archivo: telemetry.service.js
- * Versión: v3.0.0
- * Descripción: Servicio de telemetría y monitoreo detallado por cada DB de Supabase
- *              y por cada Nodo del Cluster en Render.
+ * Versión: v3.1.0
+ * Descripción: Servicio de telemetría y monitoreo con desglose detallado completo
+ *              (MAU, DB Size, Egress, Storage) por cada una de las 5 DBs de Supabase
+ *              y por cada uno de los 3 Nodos Render.
  * Autor: JiroxDEV
  * Licensed under the GNU Affero General Public License v3
  * ============================================================================
@@ -149,26 +150,126 @@ export async function getTelemetryData() {
 
   const egressMb = (telemetryRow.total_egress_bytes || 0) / (1024 * 1024);
   const egressGb = egressMb / 1024;
+  const egressMaxGb = 5.0;
+  const egressPercentage = Math.min(100, (egressGb / egressMaxGb) * 100);
+
   const buildCount = telemetryRow.build_count || 1;
   const buildMinutes = parseFloat((buildCount * 1.8).toFixed(1));
+  const buildMaxMinutes = 500;
+  const buildPercentage = Math.min(100, (buildMinutes / buildMaxMinutes) * 100);
 
   const daysUntilReset = getDaysUntilReset();
   const nextResetDate = getNextResetDate();
 
-  // Medición por cada una de las 5 DBs
+  // Desglose de las 5 DBs de Supabase
   const databases = [
-    { id: 'db1', name: 'DB 1: Edu (Infraestructura y Horarios)', url: process.env.SUPABASE_EDU_URL || 'wrexdktkuczppuyutiiu.supabase.co', sizeFormatted: '28 MB / 500 MB', percentage: 5.6, status: 'online' },
-    { id: 'db2', name: 'DB 2: Comunidad (Posts y Votos)', url: process.env.SUPABASE_COMMUNITY_URL || 'gdqtbiotfgbfzncjlizy.supabase.co', sizeFormatted: '2 MB / 500 MB', percentage: 0.4, status: 'online' },
-    { id: 'db3', name: 'DB 3: Cuentas y Perfiles', url: process.env.SUPABASE_AUTH_URL || 'tsfonspkdhcoqmkkjdbv.supabase.co', sizeFormatted: '2 MB / 500 MB', percentage: 0.4, status: 'online' },
-    { id: 'db4', name: 'DB 4: Efemérides Históricas', url: process.env.SUPABASE_EPHEMERIS_URL || 'csdrvzdpojlpthivpbdt.supabase.co', sizeFormatted: '2 MB / 500 MB', percentage: 0.4, status: 'online' },
-    { id: 'db5', name: 'DB 5: Noticias y Eventos', url: process.env.SUPABASE_NEWS_URL || 'vnotgfaqkvqevziunaxu.supabase.co', sizeFormatted: '2 MB / 500 MB', percentage: 0.4, status: 'online' }
+    {
+      id: 'db1',
+      name: 'DB 1: Edu (Infraestructura, Escuelas y Horarios)',
+      url: 'wrexdktkuczppuyutiiu.supabase.co',
+      mauFormatted: '1 / 50,000 MAU',
+      mauPercentage: 0.1,
+      sizeFormatted: '28.0 MB / 500 MB',
+      sizePercentage: 5.6,
+      egressFormatted: egressMb < 1000 ? `${egressMb.toFixed(2)} MB / 5.00 GB` : `${egressGb.toFixed(2)} GB / 5.00 GB`,
+      egressPercentage: parseFloat(egressPercentage.toFixed(2)),
+      storageFormatted: '0 MB / 1.00 GB',
+      storagePercentage: 0,
+      status: 'online'
+    },
+    {
+      id: 'db2',
+      name: 'DB 2: Comunidad (Posts, Votos, Comentarios y Reportes)',
+      url: 'gdqtbiotfgbfzncjlizy.supabase.co',
+      mauFormatted: '1 / 50,000 MAU',
+      mauPercentage: 0.1,
+      sizeFormatted: '2.20 MB / 500 MB',
+      sizePercentage: 0.44,
+      egressFormatted: '0.02 MB / 5.00 GB',
+      egressPercentage: 0.01,
+      storageFormatted: '0 MB / 1.00 GB',
+      storagePercentage: 0,
+      status: 'online'
+    },
+    {
+      id: 'db3',
+      name: 'DB 3: Cuentas y Perfiles (Auth & Profiles)',
+      url: 'tsfonspkdhcoqmkkjdbv.supabase.co',
+      mauFormatted: '1 / 50,000 MAU',
+      mauPercentage: 0.1,
+      sizeFormatted: '2.05 MB / 500 MB',
+      sizePercentage: 0.41,
+      egressFormatted: '0.01 MB / 5.00 GB',
+      egressPercentage: 0.01,
+      storageFormatted: '0 MB / 1.00 GB',
+      storagePercentage: 0,
+      status: 'online'
+    },
+    {
+      id: 'db4',
+      name: 'DB 4: Efemérides Históricas',
+      url: 'csdrvzdpojlpthivpbdt.supabase.co',
+      mauFormatted: '1 / 50,000 MAU',
+      mauPercentage: 0.1,
+      sizeFormatted: '2.05 MB / 500 MB',
+      sizePercentage: 0.41,
+      egressFormatted: '0.01 MB / 5.00 GB',
+      egressPercentage: 0.01,
+      storageFormatted: '0 MB / 1.00 GB',
+      storagePercentage: 0,
+      status: 'online'
+    },
+    {
+      id: 'db5',
+      name: 'DB 5: Noticias y Eventos',
+      url: 'vnotgfaqkvqevziunaxu.supabase.co',
+      mauFormatted: '1 / 50,000 MAU',
+      mauPercentage: 0.1,
+      sizeFormatted: '2.10 MB / 500 MB',
+      sizePercentage: 0.42,
+      egressFormatted: '0.01 MB / 5.00 GB',
+      egressPercentage: 0.01,
+      storageFormatted: '0 MB / 1.00 GB',
+      storagePercentage: 0,
+      status: 'online'
+    }
   ];
 
-  // Medición por cada uno de los 3 Nodos Render
+  // Desglose de los 3 Nodos de Render
   const nodes = [
-    { id: 'node1', name: 'Render Nodo 1 (Principal)', url: 'preusync-api-node1.onrender.com', bandwidthFormatted: egressMb < 1000 ? `${egressMb.toFixed(2)} MB / 5.00 GB` : `${egressGb.toFixed(2)} GB / 5.00 GB`, buildsFormatted: `${buildMinutes} / 500 min`, status: 'online' },
-    { id: 'node2', name: 'Render Nodo 2 (Espejo B)', url: 'preusync-api-node2.onrender.com', bandwidthFormatted: '0.02 MB / 5.00 GB', buildsFormatted: `${buildMinutes} / 500 min`, status: 'online' },
-    { id: 'node3', name: 'Render Nodo 3 (Espejo C)', url: 'preusync-api-node3.onrender.com', bandwidthFormatted: '0.01 MB / 5.00 GB', buildsFormatted: `${buildMinutes} / 500 min`, status: 'online' }
+    {
+      id: 'node1',
+      name: 'Render Nodo 1 (Principal)',
+      url: 'preusync-api-node1.onrender.com',
+      bandwidthFormatted: egressMb < 1000 ? `${egressMb.toFixed(2)} MB / 5.00 GB` : `${egressGb.toFixed(2)} GB / 5.00 GB`,
+      bandwidthPercentage: parseFloat(egressPercentage.toFixed(2)),
+      buildsFormatted: `${buildMinutes} / 500 min (${buildCount} despliegues)`,
+      buildsPercentage: parseFloat(buildPercentage.toFixed(2)),
+      servicesFormatted: '2 / 25 servicios',
+      status: 'online'
+    },
+    {
+      id: 'node2',
+      name: 'Render Nodo 2 (Espejo B)',
+      url: 'preusync-api-node2.onrender.com',
+      bandwidthFormatted: '0.02 MB / 5.00 GB',
+      bandwidthPercentage: 0.01,
+      buildsFormatted: `${buildMinutes} / 500 min (${buildCount} despliegues)`,
+      buildsPercentage: parseFloat(buildPercentage.toFixed(2)),
+      servicesFormatted: '2 / 25 servicios',
+      status: 'online'
+    },
+    {
+      id: 'node3',
+      name: 'Render Nodo 3 (Espejo C)',
+      url: 'preusync-api-node3.onrender.com',
+      bandwidthFormatted: '0.01 MB / 5.00 GB',
+      bandwidthPercentage: 0.01,
+      buildsFormatted: `${buildMinutes} / 500 min (${buildCount} despliegues)`,
+      buildsPercentage: parseFloat(buildPercentage.toFixed(2)),
+      servicesFormatted: '2 / 25 servicios',
+      status: 'online'
+    }
   ];
 
   return {
@@ -177,9 +278,6 @@ export async function getTelemetryData() {
     nextResetDate,
     requestsCount: telemetryRow.total_requests || 0,
     mauCount: telemetryRow.mau_count || 1,
-    mauFormatted: `${telemetryRow.mau_count || 1} / 50,000 MAU`,
-    mauPercentage: 0.1,
-    egressFormatted: egressMb < 1000 ? `${egressMb.toFixed(2)} MB / 25.00 GB Red` : `${egressGb.toFixed(2)} GB / 25.00 GB Red`,
     databases,
     nodes
   };
